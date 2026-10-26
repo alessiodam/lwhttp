@@ -468,14 +468,16 @@ typedef struct {
   const char *url;
   /**
    * Request-target sent instead of the URL's path and query (for example ``"*"`` or an absolute URL for a
-   * proxy), or ``NULL``. Must not contain spaces or control characters. Note it is also used for every
-   * redirect hop. For ``CONNECT`` without a target, ``host:port`` from the URL is sent.
+   * proxy), or ``NULL``. Must not contain spaces or control characters. Only the first request uses it;
+   * redirect hops send the path and query of the redirect URL. For ``CONNECT`` without a target,
+   * ``host:port`` from the URL is sent.
    */
   const char *target;
   /**
    * Extra header fields, sent after the client's own. A ``Host``, ``User-Agent`` or ``Accept-Encoding``
-   * field here replaces the client's. ``Content-Length`` and ``Transfer-Encoding`` are rejected with
-   * :c:enumerator:`LWHTTP_ERR_ARG`; the client sets them from the body fields. Supplying
+   * field here replaces the client's. A supplied ``Host`` is dropped, and the client's own sent instead,
+   * once a redirect leaves the original scheme, host and port. ``Content-Length`` and ``Transfer-Encoding`` are
+   * rejected with :c:enumerator:`LWHTTP_ERR_ARG`; the client sets them from the body fields. Supplying
    * ``Accept-Encoding`` disables the content-coding check, so compressed bodies are delivered undecoded.
    */
   const lwhttp_header_t *headers;
@@ -924,8 +926,8 @@ void lwhttp_client_destroy(lwhttp_client_t *client);
  * Redirects 301, 302, 303, 307 and 308 with a ``Location`` are followed up to
  * :c:member:`lwhttp_client_config_t.max_redirects`. 303 becomes ``GET`` (unless the method is ``HEAD``),
  * as do 301 and 302 for ``POST``; the others keep the method and body. ``Authorization``,
- * ``Proxy-Authorization`` and ``Cookie`` are no longer sent once a redirect leaves the original scheme,
- * host and port.
+ * ``Proxy-Authorization``, ``Cookie`` and a supplied ``Host`` are no longer sent once a redirect leaves
+ * the original scheme, host and port.
  *
  * Responses with a body that uses a non-identity ``Content-Encoding`` (unless the request supplied
  * ``Accept-Encoding``) or a transfer coding other than ``chunked`` fail with

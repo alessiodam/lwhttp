@@ -101,6 +101,8 @@ static bool both_done(void) { return runs[0].done && runs[1].done; }
 
 static bool two_completes(void) { return runs[0].completes >= 2; }
 
+static void heap_note(const char *when);
+
 static void traceback(void)
 {
   uint8_t n = 0;
@@ -144,6 +146,7 @@ static lwhttp_error_t perform(lwhttp_client_t *c, const lwhttp_request_t *req, r
   t_note(text);
   stats(c);
   if (r->result) {
+    heap_note("fail");
     snprintf(text, sizeof(text), "  url %.70s", lwhttp_client_url(c) ? lwhttp_client_url(c) : "(none)");
     t_note(text);
     traceback();
@@ -167,10 +170,20 @@ static bool header_has(lwhttp_client_t *c, const char *name, const char *needle)
   return v && strstr(v, needle);
 }
 
+static void heap_note(const char *when)
+{
+  struct mem_accounting_stats m;
+  if (!mem_get_stats(&m)) return;
+  snprintf(text, sizeof(text), "  heap %s: used %u free %u tls %u rings %u", when, (unsigned)m.heap_used,
+           (unsigned)m.heap_free, (unsigned)m.tls_used, (unsigned)m.socket_ring_used);
+  t_note(text);
+}
+
 static bool begin(const char *name)
 {
   if (stop_network) return false;
   t_begin(name);
+  heap_note("start");
   return true;
 }
 
@@ -686,6 +699,27 @@ static void test_redirects(lwhttp_client_t *c)
     req.header_count = 1;
     CHECK_INT(perform(c, &req, fresh(0)), LWHTTP_OK);
     CHECK(body_has("lwhttp-secret"));
+    t_end();
+  }
+  if (begin("custom Host dropped cross origin")) {
+    static const lwhttp_header_t host[] = {{"Host", "httpbin.org"}};
+    lwhttp_request_t hreq = {0};
+    hreq.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.dev%2Fheaders";
+    hreq.headers = host;
+    hreq.header_count = 1;
+    CHECK_INT(perform(c, &hreq, fresh(0)), LWHTTP_OK);
+    CHECK_INT(runs[0].status, 200);
+    CHECK(body_has("httpbin.dev"));
+    t_end();
+  }
+  if (begin("custom target only on first hop")) {
+    lwhttp_request_t treq = {0};
+    treq.url = BIN "/redirect-to?url=%2Fget%3Fhop%3D2";
+    treq.target = "/redirect-to?url=%2Fget%3Fhop%3D2";
+    CHECK_INT(perform(c, &treq, fresh(0)), LWHTTP_OK);
+    CHECK_INT(runs[0].status, 200);
+    CHECK(strstr(lwhttp_client_url(c), "hop=2") != NULL);
+    CHECK(body_has("hop"));
     t_end();
   }
   if (begin("auth dropped cross origin")) {

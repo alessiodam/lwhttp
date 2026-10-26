@@ -228,7 +228,7 @@ static lwhttp_error_t build_head(lwhttp_client_t *c, const lwhttp_url_t *u, uint
     const char *n = r->headers[i].name;
     if (!n || !r->headers[i].value || lwhttp__ieq(n, "content-length") || lwhttp__ieq(n, "transfer-encoding"))
       return LWHTTP_ERR_ARG;
-    user_host |= lwhttp__ieq(n, "host");
+    user_host |= !c->cross_origin && lwhttp__ieq(n, "host");
     user_agent |= lwhttp__ieq(n, "user-agent");
     user_coding |= lwhttp__ieq(n, "accept-encoding");
   }
@@ -277,7 +277,7 @@ static lwhttp_error_t build_head(lwhttp_client_t *c, const lwhttp_url_t *u, uint
     if (c->waiting_continue) lwhttp_buffer_append_str(&b, "Expect: 100-continue\r\n");
     if (!c->config.keep_alive) lwhttp_buffer_append_str(&b, "Connection: close\r\n");
     for (i = 0; i < r->header_count; i++) {
-      if (c->cross_origin && sensitive(r->headers[i].name)) continue;
+      if (c->cross_origin && (sensitive(r->headers[i].name) || lwhttp__ieq(r->headers[i].name, "host"))) continue;
       if (!lwhttp_write_header(&b, r->headers[i].name, r->headers[i].value)) return LWHTTP_ERR_ARG;
     }
     lwhttp_write_end(&b);
@@ -337,10 +337,13 @@ static lwhttp_error_t begin(lwhttp_client_t *c)
       lwhttp__ieqn(u.host, u.host_len, c->host) && lwip_socket_status(c->sock) == LWIP_STATUS_CONNECTED &&
       !lwip_socket_available(c->sock)) {
     c->reused = true;
-    c->stats.reused++;
     c->state = CS_ACTIVE;
-    if (!send_more(c)) return LWHTTP_OK;
-    c->head_off = 0;
+    e = send_more(c);
+    if (!e) {
+      c->stats.reused++;
+      return LWHTTP_OK;
+    }
+    if (c->head_off) return e;
   }
   drop(c);
   c->host = mem_malloc(u.host_len + 1);
@@ -436,6 +439,7 @@ static void redirect(lwhttp_client_t *c)
     c->request.body_length = 0;
     c->request.expect_continue = false;
   }
+  c->request.target = NULL;
   if (!same_origin(c->url, next)) c->cross_origin = true;
   mem_free(c->url);
   c->url = next;

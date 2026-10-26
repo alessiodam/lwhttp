@@ -28,7 +28,13 @@ servers often close a connection whose request body they did not read.
 ## Credentials across origins
 
 As soon as a redirect leads to a different scheme, host or port, LWHTTP stops sending your `Authorization`,
-`Proxy-Authorization` and `Cookie` headers for the rest of that request.
+`Proxy-Authorization` and `Cookie` headers for the rest of that request. A `Host` header you supplied is dropped
+too, and the new origin's own host is sent instead.
+
+## Custom targets
+
+A `target` override only applies to the first request. Redirect hops always request the path and query of the
+URL they were redirected to.
 
 ## Failures
 
