@@ -20,7 +20,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Load pinned versions
         id: versions
@@ -44,7 +44,7 @@ jobs:
     name: ABI compatibility
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -81,7 +81,7 @@ jobs:
             cflags: -O2 -m32
             packages: gcc-multilib
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install packages
         if: matrix.packages
@@ -96,7 +96,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Load pinned versions
         id: versions
@@ -116,7 +116,7 @@ jobs:
             cat obj/coverage/coverage.md
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: obj/coverage/*.html
@@ -130,14 +130,14 @@ jobs:
       matrix:
         target: [parser, url, misc]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Load pinned versions
         id: versions
         run: grep -E '^[A-Z_]+=' .github/ci-versions.env >> "$GITHUB_OUTPUT"
 
       - name: Restore corpus
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: obj/fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload crash inputs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashes-${{ matrix.target }}
           path: obj/fuzz/${{ matrix.target }}-*
@@ -158,7 +158,7 @@ jobs:
     name: Build (CE toolchain)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-cedev
 
@@ -188,7 +188,7 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lwhttp-build
           path: |
@@ -206,7 +206,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check for ROM secrets
         id: rom
@@ -233,7 +233,7 @@ jobs:
       - name: Cache CEmu autotester
         if: steps.rom.outputs.available == 'true'
         id: cemu-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/cemu-autotester
           key: cemu-autotester-${{ runner.os }}-${{ steps.versions.outputs.CEMU_REF }}
@@ -275,7 +275,7 @@ jobs:
         if: always() && steps.rom.outputs.available == 'true'
         run: shred -u "$RUNNER_TEMP/ce.rom" 2>/dev/null || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.rom.outputs.available == 'true'
         with:
           name: httptest-emulator-log
