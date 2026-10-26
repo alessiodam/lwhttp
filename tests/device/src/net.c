@@ -982,7 +982,7 @@ static void test_upgrade(void)
 
 void net_offline_tests(void) { test_client_api(); }
 
-void net_tests(void)
+void net_tests(bool extended)
 {
   lwhttp_client_t *c = lwhttp_client_create(NULL);
   stop_network = false;
@@ -999,8 +999,10 @@ void net_tests(void)
   test_redirects(c);
   test_control(c);
   lwhttp_client_destroy(c);
-  test_tls_probes();
   test_failures();
-  test_upgrade();
+  if (extended) {
+    test_tls_probes();
+    test_upgrade();
+  }
   if (stop_network) t_info("network tests stopped by user");
 }

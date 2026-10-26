@@ -40,14 +40,28 @@ for diagnosis.
 make emulator-test AUTOTESTER_ROM=/path/to/rom LWIP_DIST=../lwip-ce/build CLIBS=clibs.8xg
 ```
 
-Runs HTTPTEST in CEmu's autotester in offline mode. The emulator has no network, so only the unit suite and the
-offline client checks run; the result is read back from the screen and from `HTTPLOG`.
+Runs HTTPTEST in CEmu's autotester; the result is read back from the screen and from `HTTPLOG`. `HTTPTEST_MODE`
+picks the suite:
+
+| Mode | What runs |
+| --- | --- |
+| `offline` | The unit suite and the offline client checks. The default, needs no network. |
+| `full` | Adds the network suite against httpbin, example.com and the failure cases. |
+| `extended` | Adds the TLS chain probes against third-party hosts and the WebSocket upgrade. |
+
+The network modes need [CEmu-lwIP-CE](https://github.com/alessiodam/CEmu-lwIP-CE)'s autotester, a TAP interface and
+the lwIP-CE truststore, which [cemu-net-action](https://github.com/alessiodam/cemu-net-action) sets up in CI:
+
+```sh
+make emulator-test HTTPTEST_MODE=full TRUSTSTORE=lwIPCERT.8xv \
+  USB_STEP='usb|eth,cemu0,dhcp=192.168.84.2/24,gw=192.168.84.1,dns=1.1.1.1' ...
+```
 
 ## Continuous integration
 
 | Workflow | What it does |
 | --- | --- |
-| CI | Lint, ABI check, host tests, coverage, fuzzing, the CE build with a size budget, and the emulator run |
+| CI | Lint, ABI check, host tests, coverage, fuzzing, the CE build with a size budget, and the `full` and `extended` emulator runs |
 | Release | Runs CI for a `v*` tag and publishes the release with checksums and build provenance |
 | Nightly | Builds against lwIP-CE `master` to catch upstream changes early |
 | CodeQL | Static security analysis |

@@ -205,9 +205,13 @@ jobs:
           if-no-files-found: error
 
   emulator:
-    name: Emulator tests (CEmu)
+    name: Emulator tests (CEmu, ${{ matrix.mode }})
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [full, extended]
     steps:
       - uses: actions/checkout@v7
 
@@ -236,23 +240,11 @@ jobs:
         if: steps.rom.outputs.available == 'true'
         id: cedev
 
-      - name: Cache CEmu autotester
+      - uses: alessiodam/cemu-net-action@v1
         if: steps.rom.outputs.available == 'true'
-        id: cemu-cache
-        uses: actions/cache@v6
+        id: cemu
         with:
-          path: ${{ runner.temp }}/cemu-autotester
-          key: cemu-autotester-${{ runner.os }}-${{ steps.versions.outputs.CEMU_REF }}
-
-      - name: Build CEmu autotester
-        if: steps.rom.outputs.available == 'true' && steps.cemu-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/CE-Programming/CEmu.git "$RUNNER_TEMP/cemu"
-          git -C "$RUNNER_TEMP/cemu" checkout "${{ steps.versions.outputs.CEMU_REF }}"
-          git -C "$RUNNER_TEMP/cemu" submodule update --init --recursive
-          make -C "$RUNNER_TEMP/cemu/core" -j"$(nproc)"
-          make -C "$RUNNER_TEMP/cemu/tests/autotester" -j"$(nproc)"
-          cp "$RUNNER_TEMP/cemu/tests/autotester/autotester" "$RUNNER_TEMP/cemu-autotester"
+          truststore: true
 
       - name: Fetch ROM and CE libraries
         if: steps.rom.outputs.available == 'true'
@@ -282,9 +274,12 @@ jobs:
         if: steps.rom.outputs.available == 'true'
         run: |
           make emulator-test \
+            HTTPTEST_MODE=${{ matrix.mode }} \
             LWIP_DIST="${{ steps.cedev.outputs.lwip-dist }}" \
             CLIBS="$RUNNER_TEMP/clibs.8xg" \
-            CEMU_AUTOTESTER="$RUNNER_TEMP/cemu-autotester" \
+            TRUSTSTORE="${{ steps.cemu.outputs.truststore }}" \
+            USB_STEP="${{ steps.cemu.outputs.usb-step }}" \
+            CEMU_AUTOTESTER="${{ steps.cemu.outputs.autotester }}" \
             AUTOTESTER_ROM="$RUNNER_TEMP/ce.rom"
 
       - name: Remove ROM
@@ -294,6 +289,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always() && steps.rom.outputs.available == 'true'
         with:
-          name: httptest-emulator-log
+          name: httptest-emulator-log-${{ matrix.mode }}
           path: tests/device/HTTPLOG.8xv
           if-no-files-found: ignore

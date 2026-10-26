@@ -16,6 +16,9 @@ CEMU_AUTOTESTER ?= cemu-autotester
 AUTOTESTER_ROM ?=
 LWIP_DIST ?= ../lwip-ce/build
 CLIBS ?= clibs.8xg
+TRUSTSTORE ?=
+USB_STEP ?=
+HTTPTEST_MODE ?= offline
 LWIP_INSTALL_CRC ?= F7C03D8D
 HTTPTEST_VERDICT_CRC ?= 46258A1A
 VERSION := $(shell sed -n 's/^\#define LWHTTP_VERSION_STRING "\(.*\)"/\1/p' lwhttp.h)
@@ -111,11 +114,12 @@ httptest: install
 emulator-test: httptest
 	rm -rf $(CI_FILES) tests/device/HTTPLOG.8xv
 	mkdir -p $(CI_FILES) obj
-	cp $(LWIP_DIST)/appinst/*.8x* $(LWIP_DIST)/lwip.8xv bin/LWHTTP.8xv $(CLIBS) $(CI_FILES)/
-	printf 1 > obj/httpci.bin
+	cp $(LWIP_DIST)/appinst/*.8x* $(LWIP_DIST)/lwip.8xv bin/LWHTTP.8xv $(CLIBS) $(TRUSTSTORE) $(CI_FILES)/
+	printf '%.1s' $(HTTPTEST_MODE) > obj/httpci.bin
 	$(CONVBIN) -i obj/httpci.bin -o $(CI_FILES)/HTTPCI.8xv -j bin -k 8xv -n HTTPCI
 	$(PYTHON) -I tests/device/autotest.py --files $(CI_FILES) --install-crc $(LWIP_INSTALL_CRC) \
-		--verdict-crc $(HTTPTEST_VERDICT_CRC) --save-var --out tests/device/autotest.json
+		--verdict-crc $(HTTPTEST_VERDICT_CRC) --save-var --mode $(HTTPTEST_MODE) \
+		$(if $(USB_STEP),--usb '$(USB_STEP)') --out tests/device/autotest.json
 	cd tests/device && AUTOTESTER_ROM="$(AUTOTESTER_ROM)" $(CEMU_AUTOTESTER) "$$PWD/autotest.json"; status=$$?; \
 		$(PYTHON) -I httplog.py HTTPLOG.8xv || status=1; exit $$status
 

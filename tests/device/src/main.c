@@ -115,19 +115,21 @@ static void archive_log(void)
   ti_Close(h);
 }
 
-static bool ci_mode(void)
+static char ci_mode(void)
 {
+  char mode = 0;
   uint8_t h = ti_Open(CI_NAME, "r");
-  if (!h) return false;
+  if (!h) return 0;
+  ti_Read(&mode, 1, 1, h);
   ti_Close(h);
-  return true;
+  return mode;
 }
 
 int main(void)
 {
   bool started = false;
   bool up = false;
-  bool ci = ci_mode();
+  char ci = ci_mode();
 
   gfx_Begin();
   palette();
@@ -142,7 +144,7 @@ int main(void)
   log_handle = ti_Open(LOG_NAME, "w");
   snprintf(text, sizeof(text), "HTTPTEST LWHTTP %s", lwhttp_version_string());
   t_info(text);
-  t_info(ci ? "emulator mode: network tests skipped" : "press [clear] to stop network tests");
+  t_info(ci == 'o' ? "emulator mode: network tests skipped" : "press [clear] to stop network tests");
 
   unit_tests();
 
@@ -155,7 +157,7 @@ int main(void)
   }
   t_end();
   if (started) net_offline_tests();
-  if (started && !ci) {
+  if (started && ci != 'o') {
     t_section("network up");
     t_begin("lwip_network_up");
     up = CHECK(lwip_network_up());
@@ -164,7 +166,7 @@ int main(void)
       t_emit(T_DETAIL, text);
     }
     t_end();
-    if (up) net_tests();
+    if (up) net_tests(ci != 'f');
   }
 
   snprintf(text, sizeof(text), "DONE pass %lu fail %lu", t_passed, t_failed);
