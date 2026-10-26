@@ -115,6 +115,8 @@ static void traceback(void)
   }
 }
 
+static lwhttp_client_stats_t before;
+
 static void stats(lwhttp_client_t *c)
 {
   const lwhttp_client_stats_t *s = lwhttp_client_stats(c);
@@ -122,11 +124,18 @@ static void stats(lwhttp_client_t *c)
   snprintf(text, sizeof(text), "  conn %u reuse %u retry %u redir %u", s->connections, s->reused, s->retries,
            s->redirects);
   t_note(text);
+  snprintf(text, sizeof(text), "  sent %lu recv %lu stalls %u unsent %lu state %u",
+           (unsigned long)(s->bytes_sent - before.bytes_sent),
+           (unsigned long)(s->bytes_received - before.bytes_received), s->write_stalls - before.write_stalls,
+           (unsigned long)s->unsent, s->final_state);
+  t_note(text);
 }
 
 static lwhttp_error_t perform(lwhttp_client_t *c, const lwhttp_request_t *req, run_t *r)
 {
-  lwhttp_error_t e = lwhttp_client_request(c, req, &handlers, r);
+  lwhttp_error_t e;
+  if (lwhttp_client_stats(c)) before = *lwhttp_client_stats(c);
+  e = lwhttp_client_request(c, req, &handlers, r);
   uint32_t start = lwip_now_ms();
   if (e) return e;
   wait_until(first_done, c, NULL);

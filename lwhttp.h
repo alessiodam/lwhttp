@@ -150,6 +150,11 @@ typedef struct {
   uint16_t reused;
   uint16_t retries;
   uint16_t redirects;
+  uint16_t write_stalls;
+  uint32_t bytes_sent;
+  uint32_t bytes_received;
+  uint32_t unsent;
+  uint8_t final_state;
 } lwhttp_client_stats_t;
 
 typedef struct {

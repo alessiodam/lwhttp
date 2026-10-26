@@ -92,6 +92,9 @@ static void leave(lwhttp_client_t *c)
 static void finish(lwhttp_client_t *c, lwhttp_error_t e)
 {
   const lwhttp_client_handlers_t *h = c->handlers;
+  c->stats.final_state = c->state;
+  c->stats.unsent = (uint32_t)(c->head_len - c->head_off) + (uint32_t)(c->tx_len - c->tx_off) +
+                    (c->send_mode == SEND_CHUNKED && !c->last_chunk ? 1 : c->body_left);
   c->state = CS_DONE;
   c->result = e;
   if (e || (!c->reusable && !c->upgraded)) drop(c);
@@ -112,9 +115,13 @@ static lwhttp_error_t put(lwhttp_client_t *c, const uint8_t *data, size_t len, s
     e = lwip_socket_write(c->sock, data + *done, n);
     if (e == LWIP_OK) {
       *done += n;
+      c->stats.bytes_sent += n;
     } else if (e == LWIP_ERR_MEM || e == LWIP_ERR_ARG) {
       n = n > 1024 ? 1024 : n > 256 ? 256 : 0;
-      if (!n) break;
+      if (!n) {
+        c->stats.write_stalls++;
+        break;
+      }
     } else {
       return e == LWIP_ERR_CLOSED ? LWHTTP_ERR_CLOSED : LWHTTP_ERR_SEND;
     }
@@ -481,6 +488,7 @@ static void receive(lwhttp_client_t *c)
   size_t off;
   while (c->state == CS_ACTIVE && (n = lwip_socket_read(c->sock, c->rx, LWHTTP_RX_SIZE)) != 0) {
     c->received = true;
+    c->stats.bytes_received += n;
     for (off = 0; off < n;) {
       off += lwhttp_parser_execute(&c->parser, c->rx + off, n - off);
       if (c->state != CS_ACTIVE) return;
