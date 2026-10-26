@@ -253,9 +253,15 @@ jobs:
         env:
           CE_ROM_URL: ${{ secrets.CE_ROM_URL }}
           CE_ROM_KEY: ${{ secrets.CE_ROM_KEY }}
+          CE_ROM_TOKEN: ${{ secrets.CE_ROM_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL "$CE_ROM_URL" -o "$RUNNER_TEMP/ce.rom.gpg"
+          status=$(curl -sSL --retry 3 -H "X-CI-Token: $CE_ROM_TOKEN" -o "$RUNNER_TEMP/ce.rom.gpg" -w '%{http_code}' "$CE_ROM_URL")
+          if [ "$status" != 200 ]; then
+            echo "::error title=ROM download failed::HTTP $status"
+            head -c 600 "$RUNNER_TEMP/ce.rom.gpg" | tr -cd '[:print:]\n' | sed 's/^/  /'
+            exit 1
+          fi
           gpg --batch --yes --quiet --pinentry-mode loopback --passphrase "$CE_ROM_KEY" \
             --output "$RUNNER_TEMP/ce.rom" --decrypt "$RUNNER_TEMP/ce.rom.gpg"
           rm -f "$RUNNER_TEMP/ce.rom.gpg"
