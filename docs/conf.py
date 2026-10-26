@@ -31,7 +31,7 @@ exclude_patterns = ["_build", "requirements.txt", "check_exports.py"]
 
 html_theme = "shibuya"
 html_title = "LWHTTP"
-html_baseurl = "https://alessiodam.github.io/lwhttp/"
+html_baseurl = "https://lwhttp-docs.alessiodam.dev/"
 html_copy_source = False
 html_show_sourcelink = False
 html_context = {
