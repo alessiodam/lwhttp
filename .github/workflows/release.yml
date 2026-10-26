@@ -3,8 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+-*"
+      - "v*"
 
 permissions:
   contents: read
@@ -33,17 +32,9 @@ jobs:
             exit 1
           fi
 
-      - name: Check tag matches LWHTTP_VERSION_STRING
+      - name: Check SemVer, version and ABI bump
         id: version
-        run: |
-          version="$(make -s version)"
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "${tag%%-*}" != "$version" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match LWHTTP_VERSION_STRING $version"
-            exit 1
-          fi
-          echo "version=$tag" >> "$GITHUB_OUTPUT"
-          if [ "$tag" != "${tag%%-*}" ]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+        run: python3 -I .github/scripts/semver.py "$GITHUB_REF_NAME"
 
   ci:
     name: CI
@@ -111,7 +102,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           flags=()
-          if [ "${{ needs.verify.outputs.prerelease }}" = true ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          if [ "${{ needs.verify.outputs.prerelease }}" = true ]; then flags+=(--prerelease --latest=false); else flags+=(--latest); fi
           gh release create "$GITHUB_REF_NAME" assets/* \
             --title "LWHTTP $GITHUB_REF_NAME" \
             --notes-file "$RUNNER_TEMP/notes.md" \

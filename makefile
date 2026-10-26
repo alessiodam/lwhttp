@@ -69,7 +69,10 @@ lint:
 	$(CLANG_FORMAT) --dry-run --Werror $(FORMATTED)
 	$(CPPCHECK) --error-exitcode=1 --enable=warning,performance,portability --std=c11 --quiet \
 		--suppress=missingIncludeSystem -I . $(HOST_SOURCES) tests/fuzz/*.c
-	$(PYTHON) -m py_compile tests/device/autotest.py tests/device/httplog.py docs/conf.py docs/check_exports.py
+	$(PYTHON) -m py_compile tests/device/autotest.py tests/device/httplog.py docs/conf.py docs/check_exports.py \
+		.github/scripts/semver.py
+	$(PYTHON) -I .github/scripts/semver.py --self-test
+	$(PYTHON) -I .github/scripts/semver.py --check-header
 
 format:
 	$(CLANG_FORMAT) -i $(FORMATTED)

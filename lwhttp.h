@@ -16,7 +16,8 @@ extern "C" {
 /** Patch version of the library this header belongs to. */
 #define LWHTTP_VERSION_PATCH 0
 /**
- * Version as a string, ``"MAJOR.MINOR.PATCH"``.
+ * Version as a SemVer 2.0.0 string, ``"MAJOR.MINOR.PATCH"`` with an optional ``-prerelease`` suffix such as
+ * ``"1.0.0-rc1"``.
  *
  * Also used in the default ``User-Agent`` (``"LWHTTP/" LWHTTP_VERSION_STRING``). Compare with
  * :c:func:`lwhttp_version_string` to detect a header/library mismatch.
