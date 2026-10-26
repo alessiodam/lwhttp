@@ -36,7 +36,7 @@ runs:
 
     - name: Cache CEdev
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ github.workspace }}/CEdev
         key: cedev-${{ runner.os }}-${{ steps.versions.outputs.TOOLCHAIN_REF }}-${{ steps.versions.outputs.CE_LIBIFY_REF }}-${{ steps.ref.outputs.mode }}
@@ -48,7 +48,7 @@ runs:
 
     - name: Set up Go
       if: steps.cache.outputs.cache-hit != 'true'
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ steps.versions.outputs.GO_VERSION }}
 
@@ -80,7 +80,7 @@ runs:
 
     - name: Check out lwIP-CE
       if: steps.ref.outputs.mode == 'source'
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: cagscalclabs/lwip-ce
         ref: ${{ steps.ref.outputs.ref }}
@@ -90,7 +90,7 @@ runs:
 
     - name: Check out convbin
       if: steps.ref.outputs.mode == 'source'
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: mateoconlechuga/convbin
         ref: ${{ steps.versions.outputs.CONVBIN_REF }}
