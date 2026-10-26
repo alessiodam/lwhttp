@@ -43,15 +43,3 @@ Tokens
 
 .. c:autofunction:: lwhttp_header_has_token
    :file: lwhttp.h
-
-Dates
------
-
-.. c:automacro:: LWHTTP_DATE_SIZE
-   :file: lwhttp.h
-
-.. c:autofunction:: lwhttp_date_format
-   :file: lwhttp.h
-
-.. c:autofunction:: lwhttp_date_parse
-   :file: lwhttp.h

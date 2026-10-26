@@ -9,7 +9,7 @@ void lwhttp_buffer_init(lwhttp_buffer_t *buffer, char *data, size_t size)
   buffer->len = 0;
 }
 
-void lwhttp_buffer_append(lwhttp_buffer_t *buffer, const void *data, size_t len)
+LWHTTP_NOINLINE void lwhttp_buffer_append(lwhttp_buffer_t *buffer, const void *data, size_t len)
 {
   if (len && buffer->len <= buffer->size && len <= buffer->size - buffer->len)
     memcpy(buffer->data + buffer->len, data, len);

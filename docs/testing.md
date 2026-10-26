@@ -8,7 +8,7 @@ LWHTTP is tested on the host, in an emulator and on real hardware. All of it run
 make test
 ```
 
-Compiles the protocol code (parser, header store, writer, URLs, dates) for the host and runs the shared unit suite.
+Compiles the protocol code (parser, header store, writer, URLs, tokens) for the host and runs the shared unit suite.
 CI runs it with gcc and clang, with AddressSanitizer and UndefinedBehaviorSanitizer, at `-O2`, and as a 32-bit
 build.
 

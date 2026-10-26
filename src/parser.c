@@ -71,7 +71,7 @@ bool lwhttp_parser_keep_alive(const lwhttp_parser_t *parser) { return (parser->f
 
 lwhttp_error_t lwhttp_parser_error(const lwhttp_parser_t *parser) { return (lwhttp_error_t)parser->error; }
 
-static size_t fail(lwhttp_parser_t *p, lwhttp_error_t e, size_t at)
+LWHTTP_NOINLINE static size_t fail(lwhttp_parser_t *p, lwhttp_error_t e, size_t at)
 {
   p->state = ST_ERROR;
   p->error = (uint8_t)e;

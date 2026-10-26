@@ -41,11 +41,6 @@ extern "C" {
  * to ``HEAD``, see :c:func:`lwhttp_parser_set_request`).
  */
 #define LWHTTP_PARSER_SKIP_BODY 1
-/**
- * Size of the buffer :c:func:`lwhttp_date_format` writes: 29 characters of IMF-fixdate plus the
- * terminating NUL.
- */
-#define LWHTTP_DATE_SIZE 30
 
 /**
  * Message flag: the body uses chunked transfer coding (``chunked`` is the final ``Transfer-Encoding``).
@@ -634,28 +629,6 @@ bool lwhttp_is_token(const char *s);
  * :return: true if found; false if not or if either argument is ``NULL``.
  */
 bool lwhttp_header_has_token(const char *value, const char *token);
-/**
- * Format a Unix timestamp as an HTTP date (IMF-fixdate, ``"Sun, 06 Nov 1994 08:49:37 GMT"``).
- *
- * :param timestamp: Seconds since 1970-01-01 00:00:00 UTC.
- * :param out: Buffer of at least :c:macro:`LWHTTP_DATE_SIZE` bytes; receives a NUL-terminated string.
- * :return: Length of the string, always ``LWHTTP_DATE_SIZE - 1``.
- */
-size_t lwhttp_date_format(uint32_t timestamp, char *out);
-/**
- * Parse an HTTP date in any of the three RFC 9110 formats.
- *
- * Accepts IMF-fixdate (``"Sun, 06 Nov 1994 08:49:37 GMT"``), RFC 850 (``"Sunday, 06-Nov-94 08:49:37 GMT"``,
- * two-digit years below 70 mean 20xx) and asctime (``"Sun Nov  6 08:49:37 1994"``). Month names are
- * case-sensitive, the weekday name is not checked, trailing characters are rejected, and a leap second (60)
- * is read as 59. Years 1970 to 2105 are accepted.
- *
- * :param s: NUL-terminated date string.
- * :param timestamp: Receives seconds since 1970-01-01 00:00:00 UTC on success.
- * :return: :c:enumerator:`LWHTTP_OK`, :c:enumerator:`LWHTTP_ERR_ARG` if an argument is ``NULL``, or
- *     :c:enumerator:`LWHTTP_ERR_PROTOCOL` if the string is not a valid date.
- */
-lwhttp_error_t lwhttp_date_parse(const char *s, uint32_t *timestamp);
 
 /**
  * Initialise a parser for a new stream of responses.

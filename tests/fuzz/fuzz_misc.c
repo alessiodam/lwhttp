@@ -9,24 +9,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
   static char input[256];
   static char out[512];
-  char date[LWHTTP_DATE_SIZE];
-  uint32_t t;
-  uint32_t back;
   lwhttp_buffer_t b;
   char *value;
   if (size >= sizeof(input)) return 0;
   memcpy(input, data, size);
   input[size] = '\0';
-  if (lwhttp_date_parse(input, &t) == LWHTTP_OK) {
-    if (lwhttp_date_format(t, date) != LWHTTP_DATE_SIZE - 1) __builtin_trap();
-    if (lwhttp_date_parse(date, &back) != LWHTTP_OK || back != t) __builtin_trap();
-  }
-  if (size >= 4) {
-    memcpy(&t, data, 4);
-    lwhttp_date_format(t, date);
-    if (strlen(date) != LWHTTP_DATE_SIZE - 1) __builtin_trap();
-    if (t <= 4291747199ul && (lwhttp_date_parse(date, &back) != LWHTTP_OK || back != t)) __builtin_trap();
-  }
   lwhttp_header_has_token(input, "close");
   lwhttp_is_token(input);
   value = strchr(input, '=');

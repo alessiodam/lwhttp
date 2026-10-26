@@ -15,7 +15,7 @@ Create clients, send requests, read responses.
 :::{grid-item-card} Errors and utilities
 :link: util
 :link-type: doc
-Result codes, the event loop, tokens and HTTP dates.
+Result codes, the event loop and token helpers.
 :::
 
 :::{grid-item-card} Parser

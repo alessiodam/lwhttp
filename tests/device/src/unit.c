@@ -528,75 +528,6 @@ static void test_tokens(void)
   t_end();
 }
 
-static void date_round(uint32_t t, const char *text)
-{
-  char out[LWHTTP_DATE_SIZE];
-  uint32_t back = 0;
-  CHECK_INT(lwhttp_date_format(t, out), LWHTTP_DATE_SIZE - 1);
-  CHECK_STR(out, text);
-  CHECK_INT(lwhttp_date_parse(text, &back), LWHTTP_OK);
-  CHECK_INT(back, t);
-}
-
-static void date_parse(const char *text, uint32_t want)
-{
-  uint32_t t = 0;
-  if (CHECK_INT(lwhttp_date_parse(text, &t), LWHTTP_OK)) CHECK_INT(t, want);
-}
-
-static void date_bad(const char *text)
-{
-  uint32_t t;
-  CHECK_INT(lwhttp_date_parse(text, &t), LWHTTP_ERR_PROTOCOL);
-}
-
-static void test_dates(void)
-{
-  t_section("dates");
-  t_begin("format and parse IMF-fixdate");
-  date_round(0, "Thu, 01 Jan 1970 00:00:00 GMT");
-  date_round(86399ul, "Thu, 01 Jan 1970 23:59:59 GMT");
-  date_round(784111777ul, "Sun, 06 Nov 1994 08:49:37 GMT");
-  date_round(951782400ul, "Tue, 29 Feb 2000 00:00:00 GMT");
-  date_round(1583020799ul, "Sat, 29 Feb 2020 23:59:59 GMT");
-  date_round(2147483647ul, "Tue, 19 Jan 2038 03:14:07 GMT");
-  date_round(4102444800ul, "Fri, 01 Jan 2100 00:00:00 GMT");
-  {
-    char out[LWHTTP_DATE_SIZE];
-    lwhttp_date_format(4294967295ul, out);
-    CHECK_STR(out, "Sun, 07 Feb 2106 06:28:15 GMT");
-  }
-  date_parse("Thu, 31 Dec 2105 23:59:59 GMT", 4291747199ul);
-  t_end();
-  t_begin("RFC 850 and asctime");
-  date_parse("Sunday, 06-Nov-94 08:49:37 GMT", 784111777ul);
-  date_parse("Thursday, 01-Jan-70 00:00:00 GMT", 0);
-  date_parse("Tuesday, 01-Jan-69 00:00:00 GMT", 3124224000ul);
-  date_parse("Friday, 31-Dec-99 23:59:59 GMT", 946684799ul);
-  date_parse("Sun Nov  6 08:49:37 1994", 784111777ul);
-  date_parse("Thu Jan  1 00:00:00 1970", 0);
-  date_parse("Tue Feb 29 00:00:00 2000", 951782400ul);
-  date_parse("Sat, 31 Dec 2016 23:59:60 GMT", 1483228799ul);
-  t_end();
-  t_begin("invalid dates");
-  date_bad("Sun, 06 Nov 1994 08:49:37 UTC");
-  date_bad("Sun, 6 Nov 1994 08:49:37 GMT");
-  date_bad("Sun, 06 Foo 1994 08:49:37 GMT");
-  date_bad("Sun, 06 nov 1994 08:49:37 GMT");
-  date_bad("Sun, 06 Nov 1994 24:00:00 GMT");
-  date_bad("Sun, 06 Nov 1994 08:60:00 GMT");
-  date_bad("Sun, 32 Nov 1994 08:49:37 GMT");
-  date_bad("Sun, 00 Nov 1994 08:49:37 GMT");
-  date_bad("Wed, 31 Dec 1969 23:59:59 GMT");
-  date_bad("Sun, 06 Nov 1994 08:49:37 GMT ");
-  date_bad("Sun Nov  6 08:49:37 1994 ");
-  date_bad("garbage");
-  date_bad("");
-  date_bad(", 06 Nov 1994 08:49:37 GMT");
-  CHECK_INT(lwhttp_date_parse(NULL, NULL), LWHTTP_ERR_ARG);
-  t_end();
-}
-
 static void resolve(const char *ref, const char *want)
 {
   static char out[96];
@@ -720,7 +651,6 @@ void unit_tests(void)
   test_tokens();
   test_headers();
   test_writer();
-  test_dates();
   test_urls();
   test_parser_accept();
   test_parser_framing();

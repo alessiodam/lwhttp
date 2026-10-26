@@ -3,8 +3,6 @@ lwhttp_version_string
 lwhttp_error_string
 lwhttp_is_token
 lwhttp_header_has_token
-lwhttp_date_format
-lwhttp_date_parse
 lwhttp_parser_init
 lwhttp_parser_reset
 lwhttp_parser_set_request

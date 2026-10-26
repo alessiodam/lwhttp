@@ -20,7 +20,6 @@ semantics follow [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110), and URLs fo
 | Request targets | origin form, authority form for `CONNECT`, asterisk and absolute form through `target`. |
 | Content codings | `Accept-Encoding: identity` sent, encoded responses rejected unless the program opts in. |
 | Upgrades | `101` and `CONNECT` tunnels hand the socket over to the program. |
-| Dates | IMF-fixdate output; IMF-fixdate, RFC 850 and asctime input. |
 | HTTPS | TLS 1.3 through lwIP-CE, with SNI and certificate verification. |
 
 ## Not implemented
@@ -32,4 +31,5 @@ semantics follow [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110), and URLs fo
 | Cookies | A separate specification (RFC 6265) with state that applications manage better themselves. |
 | Proxies | lwIP-CE cannot start TLS inside an existing TCP tunnel. |
 | Pipelining | Optional in RFC 9112 and poorly supported by servers. |
+| HTTP date helpers | Nothing in the client needs them; parsing `Date` or `Last-Modified` is left to applications. |
 | Server role | LWHTTP is a client library. |

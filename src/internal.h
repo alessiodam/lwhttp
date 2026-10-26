@@ -3,6 +3,7 @@
 
 #include "../lwhttp.h"
 
+#define LWHTTP_NOINLINE __attribute__((noinline))
 #define LWHTTP_IS_DIGIT(c) ((c) >= '0' && (c) <= '9')
 #define LWHTTP_IS_ALPHA(c) ((((c) | 0x20) >= 'a') && (((c) | 0x20) <= 'z'))
 #define LWHTTP_IS_OWS(c) ((c) == ' ' || (c) == '\t')
