@@ -9,6 +9,7 @@ CLANG_FORMAT ?= clang-format
 CPPCHECK ?= cppcheck
 GCOVR ?= gcovr
 PYTHON ?= python3
+SPHINX_BUILD ?= sphinx-build
 LIB_BUDGET ?= 32768
 ABI_BASE ?= $(shell git describe --tags --abbrev=0 --match 'v*' 2>/dev/null)
 CEMU_AUTOTESTER ?= cemu-autotester
@@ -26,7 +27,7 @@ FORMATTED := lwhttp.h $(wildcard src/*.c src/*.h tests/host/*.c tests/fuzz/*.c t
 EXAMPLES := $(wildcard examples/*/makefile)
 CI_FILES := tests/device/ci
 
-.PHONY: all build test coverage fuzz $(FUZZERS:%=fuzz-%) lint format exports abi-check size-check install examples httptest \
+.PHONY: all build test docs docs-check coverage fuzz $(FUZZERS:%=fuzz-%) lint format exports abi-check size-check install examples httptest \
 	emulator-test package clean version
 
 all: build
@@ -38,6 +39,12 @@ test:
 	mkdir -p obj/host
 	$(HOST_CC) $(HOST_WARNINGS) $(HOST_CFLAGS) -I . -o obj/host/test_lwhttp $(HOST_SOURCES)
 	./obj/host/test_lwhttp
+
+docs: docs-check
+	$(SPHINX_BUILD) -W --keep-going -b html docs obj/docs/html
+
+docs-check:
+	$(PYTHON) -I docs/check_exports.py
 
 coverage:
 	rm -rf obj/coverage
@@ -62,7 +69,7 @@ lint:
 	$(CLANG_FORMAT) --dry-run --Werror $(FORMATTED)
 	$(CPPCHECK) --error-exitcode=1 --enable=warning,performance,portability --std=c11 --quiet \
 		--suppress=missingIncludeSystem -I . $(HOST_SOURCES) tests/fuzz/*.c
-	$(PYTHON) -m py_compile tests/device/autotest.py tests/device/httplog.py
+	$(PYTHON) -m py_compile tests/device/autotest.py tests/device/httplog.py docs/conf.py docs/check_exports.py
 
 format:
 	$(CLANG_FORMAT) -i $(FORMATTED)
