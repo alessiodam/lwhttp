@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CE_ROM_OBJECT: ti84pce/ce.rom.gpg
+
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -211,14 +214,17 @@ jobs:
       - name: Check for ROM secrets
         id: rom
         env:
-          CE_ROM_URL: ${{ secrets.CE_ROM_URL }}
           CE_ROM_KEY: ${{ secrets.CE_ROM_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          if [ -n "$CE_ROM_URL" ] && [ -n "$CE_ROM_KEY" ]; then
+          if [ -n "$CE_ROM_KEY" ] && [ -n "$R2_ACCOUNT_ID" ] && [ -n "$R2_BUCKET" ] && [ -n "$R2_ACCESS_KEY_ID" ] && [ -n "$R2_SECRET_ACCESS_KEY" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Emulator tests skipped::Set the CE_ROM_URL and CE_ROM_KEY secrets to run HTTPTEST on CEmu."
+            echo "::notice title=Emulator tests skipped::Set CE_ROM_KEY and the R2_* secrets to run HTTPTEST on CEmu."
           fi
 
       - name: Load pinned versions
@@ -251,12 +257,16 @@ jobs:
       - name: Fetch ROM and CE libraries
         if: steps.rom.outputs.available == 'true'
         env:
-          CE_ROM_URL: ${{ secrets.CE_ROM_URL }}
           CE_ROM_KEY: ${{ secrets.CE_ROM_KEY }}
-          CE_ROM_TOKEN: ${{ secrets.CE_ROM_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          status=$(curl -sSL --retry 3 -H "X-CI-Token: $CE_ROM_TOKEN" -o "$RUNNER_TEMP/ce.rom.gpg" -w '%{http_code}' "$CE_ROM_URL")
+          status=$(curl -sS --retry 3 --aws-sigv4 "aws:amz:auto:s3" --user "$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY" \
+            -o "$RUNNER_TEMP/ce.rom.gpg" -w '%{http_code}' \
+            "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$R2_BUCKET/${{ env.CE_ROM_OBJECT }}")
           if [ "$status" != 200 ]; then
             echo "::error title=ROM download failed::HTTP $status"
             head -c 600 "$RUNNER_TEMP/ce.rom.gpg" | tr -cd '[:print:]\n' | sed 's/^/  /'
