@@ -1,0 +1,125 @@
+name: Set up CEdev
+description: Install the CE C toolchain, ce-libify and lwIP-CE into the workspace
+inputs:
+  lwip-ref:
+    description: lwIP-CE release tag to download, or a branch to build from source
+    required: false
+    default: ""
+outputs:
+  lwip-dist:
+    description: Directory holding the lwIP-CE build output
+    value: ${{ steps.lwip.outputs.dist }}
+runs:
+  using: composite
+  steps:
+    - name: Load pinned versions
+      id: versions
+      shell: bash
+      run: grep -E '^[A-Z_]+=' .github/ci-versions.env >> "$GITHUB_OUTPUT"
+
+    - name: Resolve lwIP-CE source
+      id: ref
+      shell: bash
+      env:
+        INPUT_REF: ${{ inputs.lwip-ref }}
+        PINNED_REF: ${{ steps.versions.outputs.LWIP_CE_REF }}
+      run: |
+        ref="${INPUT_REF:-$PINNED_REF}"
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+        if [[ "$ref" =~ ^v[0-9] ]]; then echo "mode=release" >> "$GITHUB_OUTPUT"; else echo "mode=source" >> "$GITHUB_OUTPUT"; fi
+
+    - name: Export CEdev paths
+      shell: bash
+      run: |
+        echo "CEDEV=${{ github.workspace }}/CEdev" >> "$GITHUB_ENV"
+        echo "${{ github.workspace }}/CEdev/bin" >> "$GITHUB_PATH"
+
+    - name: Cache CEdev
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/CEdev
+        key: cedev-${{ runner.os }}-${{ steps.versions.outputs.TOOLCHAIN_REF }}-${{ steps.versions.outputs.CE_LIBIFY_REF }}-${{ steps.ref.outputs.mode }}
+
+    - name: Download CE C toolchain
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: curl -fsSL "https://github.com/CE-Programming/toolchain/releases/download/${{ steps.versions.outputs.TOOLCHAIN_REF }}/CEdev-Linux.tar.gz" | tar xz -C "${{ github.workspace }}"
+
+    - name: Set up Go
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ steps.versions.outputs.GO_VERSION }}
+
+    - name: Install ce-libify
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        git clone --depth 1 --branch "${{ steps.versions.outputs.CE_LIBIFY_REF }}" https://github.com/alessiodam/toolchain_libify.git "${{ runner.temp }}/ce-libify"
+        make -C "${{ runner.temp }}/ce-libify" install CEDEV="$CEDEV" PYTHON=python3
+
+    - name: Download lwIP-CE release
+      if: steps.ref.outputs.mode == 'release'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        dir="${{ runner.temp }}/lwip-ce"
+        rm -rf "$dir"
+        mkdir -p "$dir"
+        gh release download "${{ steps.ref.outputs.ref }}" --repo cagscalclabs/lwip-ce --pattern lwip.zip --dir "$dir"
+        unzip -q "$dir/lwip.zip" -d "$dir"
+
+    - name: Install lwIP-CE build dependencies
+      if: steps.ref.outputs.mode == 'source'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unifdef python3-clang libclang-dev zip
+
+    - name: Check out lwIP-CE
+      if: steps.ref.outputs.mode == 'source'
+      uses: actions/checkout@v4
+      with:
+        repository: cagscalclabs/lwip-ce
+        ref: ${{ steps.ref.outputs.ref }}
+        path: .ci/lwip-ce
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Check out convbin
+      if: steps.ref.outputs.mode == 'source'
+      uses: actions/checkout@v4
+      with:
+        repository: mateoconlechuga/convbin
+        ref: ${{ steps.versions.outputs.CONVBIN_REF }}
+        path: .ci/convbin
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Build lwIP-CE from source
+      if: steps.ref.outputs.mode == 'source'
+      shell: bash
+      run: |
+        make -C .ci/convbin -j"$(nproc)"
+        cp .ci/convbin/bin/convbin "$CEDEV/bin/convbin"
+        make -C .ci/lwip-ce dylib
+
+    - name: Install lwIP-CE into CEdev
+      id: lwip
+      shell: bash
+      run: |
+        if [ "${{ steps.ref.outputs.mode }}" = release ]; then dist="${{ runner.temp }}/lwip-ce/build"; else dist="${{ github.workspace }}/.ci/lwip-ce/build"; fi
+        mkdir -p "$CEDEV/lib/libload" "$CEDEV/include"
+        cp "$dist/lwip.lib" "$CEDEV/lib/libload/lwip.lib"
+        cp -R "$dist/lwip" "$CEDEV/include/"
+        cp "$dist"/*.h "$CEDEV/include/"
+        echo "dist=$dist" >> "$GITHUB_OUTPUT"
+
+    - name: Report tool versions
+      shell: bash
+      run: |
+        ce-libify --version
+        cedev-config --version || true
+        echo "lwIP-CE ${{ steps.ref.outputs.ref }} (${{ steps.ref.outputs.mode }})"

@@ -1,0 +1,12 @@
+{
+    "C_Cpp.default.configurationProvider": "",
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.clang_format_style": "file",
+    "editor.formatOnSave": true,
+    "files.associations": {
+        "*.h": "c"
+    },
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false
+}

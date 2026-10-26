@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME does not point at a commit on main"
+            exit 1
+          fi
+
+      - name: Check tag matches LWHTTP_VERSION_STRING
+        id: version
+        run: |
+          version="$(make -s version)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "${tag%%-*}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match LWHTTP_VERSION_STRING $version"
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          if [ "$tag" != "${tag%%-*}" ]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  ci:
+    name: CI
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  publish:
+    name: Publish release
+    needs: [verify, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lwhttp-build
+          path: dist
+
+      - name: Collect release assets
+        run: |
+          mkdir -p assets
+          find dist -type f -exec cp {} assets/ \;
+          (cd assets && sha256sum -- * > SHA256SUMS)
+          ls -l assets
+
+      - name: Write release notes
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA^" 2>/dev/null || true)
+          {
+            echo "## LWHTTP $GITHUB_REF_NAME"
+            echo
+            echo "Built with lwIP-CE $(grep '^LWIP_CE_REF=' .github/ci-versions.env | cut -d= -f2) and CE toolchain $(grep '^TOOLCHAIN_REF=' .github/ci-versions.env | cut -d= -f2)."
+            echo
+            if [ -n "$prev" ]; then
+              echo "### Changes since $prev"
+              echo
+              git log --reverse --no-merges --pretty=format:'- %s (%h)' "$prev..$GITHUB_SHA"
+            else
+              echo "### Changes"
+              echo
+              git log --reverse --no-merges --pretty=format:'- %s (%h)' "$GITHUB_SHA"
+            fi
+            echo
+            echo
+            echo "### Install"
+            echo
+            echo "Send \`LWHTTP.8xv\` to the calculator together with lwIP-CE. Link programs against \`LWHTTP.lib\` and include \`lwhttp.h\`."
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: assets/*
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          if [ "${{ needs.verify.outputs.prerelease }}" = true ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --title "LWHTTP $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag \
+            "${flags[@]}"

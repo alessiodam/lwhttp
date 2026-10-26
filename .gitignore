@@ -1,0 +1,14 @@
+obj/
+bin/
+release/
+*.zip
+examples/*/bin/
+examples/*/obj/
+tests/device/bin/
+tests/device/obj/
+tests/device/ci/
+tests/device/autotest.json
+tests/device/*.8xv
+__pycache__/
+.ci/
+CEdev/

@@ -1,0 +1,7 @@
+name = "LWHTTP"
+src = "src"
+headers = "."
+exports = "exports.txt"
+header = ["lwhttp.h"]
+prefix = ["lwhttp_"]
+depend = ["lwip"]

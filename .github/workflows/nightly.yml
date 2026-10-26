@@ -1,0 +1,53 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  upstream:
+    name: Build against lwIP-CE master
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cedev
+        with:
+          lwip-ref: master
+
+      - name: Check exports against the header
+        run: make exports
+
+      - name: Build library, examples and HTTPTEST
+        run: |
+          make size-check
+          make examples
+          make httptest
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Report failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly build against lwIP-CE master is failing"
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --title "$title" --body "The scheduled build against lwIP-CE master failed: $RUN_URL"
+          fi

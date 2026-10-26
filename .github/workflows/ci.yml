@@ -1,0 +1,283 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned versions
+        id: versions
+        run: grep -E '^[A-Z_]+=' .github/ci-versions.env >> "$GITHUB_OUTPUT"
+
+      - name: Install linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+          pip install "clang-format==${{ steps.versions.outputs.CLANG_FORMAT_VERSION }}"
+
+      - name: Check formatting, static analysis and scripts
+        run: make lint
+
+      - name: Lint workflows
+        run: |
+          bash <(curl -fsSL "https://raw.githubusercontent.com/rhysd/actionlint/v${{ steps.versions.outputs.ACTIONLINT_VERSION }}/scripts/download-actionlint.bash") "${{ steps.versions.outputs.ACTIONLINT_VERSION }}"
+          ./actionlint -color
+
+  abi:
+    name: ABI compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare exports with the previous release
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            base=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA^" 2>/dev/null || true)
+          else
+            base=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          fi
+          make abi-check ABI_BASE="$base"
+
+  host-tests:
+    name: Host tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc, ASan + UBSan
+            cc: gcc
+            cflags: -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all
+          - name: clang, ASan + UBSan
+            cc: clang
+            cflags: -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all
+          - name: gcc, -O2
+            cc: gcc
+            cflags: -O2
+          - name: clang, -O2
+            cc: clang
+            cflags: -O2
+          - name: gcc, 32-bit
+            cc: gcc
+            cflags: -O2 -m32
+            packages: gcc-multilib
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packages
+        if: matrix.packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+
+      - name: Run unit tests
+        run: make test HOST_CC=${{ matrix.cc }} HOST_CFLAGS="${{ matrix.cflags }}"
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned versions
+        id: versions
+        run: grep -E '^[A-Z_]+=' .github/ci-versions.env >> "$GITHUB_OUTPUT"
+
+      - name: Install gcovr
+        run: pip install "gcovr==${{ steps.versions.outputs.GCOVR_VERSION }}"
+
+      - name: Measure coverage
+        run: make coverage HOST_CC=gcc
+
+      - name: Publish coverage summary
+        run: |
+          {
+            echo "## Coverage of src/"
+            echo
+            cat obj/coverage/coverage.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: obj/coverage/*.html
+          if-no-files-found: error
+
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [parser, url, misc]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned versions
+        id: versions
+        run: grep -E '^[A-Z_]+=' .github/ci-versions.env >> "$GITHUB_OUTPUT"
+
+      - name: Restore corpus
+        uses: actions/cache@v4
+        with:
+          path: obj/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Fuzz for ${{ steps.versions.outputs.FUZZ_SECONDS }} seconds
+        run: make fuzz-${{ matrix.target }} FUZZ_CC=clang FUZZ_SECONDS=${{ steps.versions.outputs.FUZZ_SECONDS }}
+
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: obj/fuzz/${{ matrix.target }}-*
+          if-no-files-found: ignore
+
+  build:
+    name: Build (CE toolchain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cedev
+
+      - name: Check exports against the header
+        run: make exports
+
+      - name: Build library and check size budget
+        run: make size-check
+
+      - name: Build examples and HTTPTEST
+        run: |
+          make examples
+          make httptest
+
+      - name: Package release archive
+        run: make package
+
+      - name: Publish build summary
+        run: |
+          {
+            echo "## Build"
+            echo
+            echo "| file | bytes |"
+            echo "| --- | --- |"
+            for f in bin/LWHTTP.8xv bin/LWHTTP.lib examples/*/bin/*.8xp tests/device/bin/HTTPTEST.8xp release/*.zip; do
+              echo "| \`$f\` | $(wc -c < "$f") |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lwhttp-build
+          path: |
+            bin/LWHTTP.8xv
+            bin/LWHTTP.lib
+            lwhttp.h
+            LICENSE
+            release/*.zip
+            examples/*/bin/*.8xp
+            tests/device/bin/HTTPTEST.8xp
+          if-no-files-found: error
+
+  emulator:
+    name: Emulator tests (CEmu)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for ROM secrets
+        id: rom
+        env:
+          CE_ROM_URL: ${{ secrets.CE_ROM_URL }}
+          CE_ROM_KEY: ${{ secrets.CE_ROM_KEY }}
+        run: |
+          if [ -n "$CE_ROM_URL" ] && [ -n "$CE_ROM_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Emulator tests skipped::Set the CE_ROM_URL and CE_ROM_KEY secrets to run HTTPTEST on CEmu."
+          fi
+
+      - name: Load pinned versions
+        if: steps.rom.outputs.available == 'true'
+        id: versions
+        run: grep -E '^[A-Z_]+=' .github/ci-versions.env >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-cedev
+        if: steps.rom.outputs.available == 'true'
+        id: cedev
+
+      - name: Cache CEmu autotester
+        if: steps.rom.outputs.available == 'true'
+        id: cemu-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/cemu-autotester
+          key: cemu-autotester-${{ runner.os }}-${{ steps.versions.outputs.CEMU_REF }}
+
+      - name: Build CEmu autotester
+        if: steps.rom.outputs.available == 'true' && steps.cemu-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/CE-Programming/CEmu.git "$RUNNER_TEMP/cemu"
+          git -C "$RUNNER_TEMP/cemu" checkout "${{ steps.versions.outputs.CEMU_REF }}"
+          git -C "$RUNNER_TEMP/cemu" submodule update --init --recursive
+          make -C "$RUNNER_TEMP/cemu/core" -j"$(nproc)"
+          make -C "$RUNNER_TEMP/cemu/tests/autotester" -j"$(nproc)"
+          cp "$RUNNER_TEMP/cemu/tests/autotester/autotester" "$RUNNER_TEMP/cemu-autotester"
+
+      - name: Fetch ROM and CE libraries
+        if: steps.rom.outputs.available == 'true'
+        env:
+          CE_ROM_URL: ${{ secrets.CE_ROM_URL }}
+          CE_ROM_KEY: ${{ secrets.CE_ROM_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL "$CE_ROM_URL" -o "$RUNNER_TEMP/ce.rom.gpg"
+          gpg --batch --yes --quiet --pinentry-mode loopback --passphrase "$CE_ROM_KEY" \
+            --output "$RUNNER_TEMP/ce.rom" --decrypt "$RUNNER_TEMP/ce.rom.gpg"
+          rm -f "$RUNNER_TEMP/ce.rom.gpg"
+          gh release download "${{ steps.versions.outputs.CLIBS_REF }}" --repo CE-Programming/libraries \
+            --pattern clibs.8xg --dir "$RUNNER_TEMP"
+
+      - name: Run HTTPTEST on CEmu
+        if: steps.rom.outputs.available == 'true'
+        run: |
+          make emulator-test \
+            LWIP_DIST="${{ steps.cedev.outputs.lwip-dist }}" \
+            CLIBS="$RUNNER_TEMP/clibs.8xg" \
+            CEMU_AUTOTESTER="$RUNNER_TEMP/cemu-autotester" \
+            AUTOTESTER_ROM="$RUNNER_TEMP/ce.rom"
+
+      - name: Remove ROM
+        if: always() && steps.rom.outputs.available == 'true'
+        run: shred -u "$RUNNER_TEMP/ce.rom" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.rom.outputs.available == 'true'
+        with:
+          name: httptest-emulator-log
+          path: tests/device/HTTPLOG.8xv
+          if-no-files-found: ignore
