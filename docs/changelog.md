@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 1.0.0-rc1
 
-First release.
+First release candidate.
 
 - Asynchronous HTTP/1.1 client driven by lwIP-CE socket events, with blocking wrappers.
 - HTTPS through lwIP-CE TLS 1.3.

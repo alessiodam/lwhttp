@@ -22,7 +22,7 @@ extern "C" {
  * Also used in the default ``User-Agent`` (``"LWHTTP/" LWHTTP_VERSION_STRING``). Compare with
  * :c:func:`lwhttp_version_string` to detect a header/library mismatch.
  */
-#define LWHTTP_VERSION_STRING "1.0.0"
+#define LWHTTP_VERSION_STRING "1.0.0-rc1"
 
 /**
  * Body length meaning "not known in advance".
