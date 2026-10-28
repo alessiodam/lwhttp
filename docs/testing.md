@@ -57,6 +57,9 @@ make emulator-test HTTPTEST_MODE=full TRUSTSTORE=lwIPCERT.8xv \
   USB_STEP='usb|eth,cemu0,dhcp=192.168.84.2/24,gw=192.168.84.1,dns=1.1.1.1' ...
 ```
 
+TLS is slow in the emulator. If the `extended` suite runs out of time, raise `HTTPTEST_TIMEOUT` (milliseconds, 900000
+by default).
+
 ## Continuous integration
 
 | Workflow | What it does |

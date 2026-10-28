@@ -14,7 +14,7 @@ Every fallible call returns an {c:type}`lwhttp_error_t`, and `on_complete` recei
 | `LWHTTP_ERR_CONNECT` | The TCP connection could not be established, or timed out while connecting. |
 | `LWHTTP_ERR_TLS` | The TLS handshake or certificate check failed. See [HTTPS](https.md). |
 | `LWHTTP_ERR_SEND` | lwIP-CE rejected a write on an open connection. |
-| `LWHTTP_ERR_CLOSED` | The connection closed, reset or timed out before the response was complete. |
+| `LWHTTP_ERR_CLOSED` | The connection closed or reset before the response was complete. |
 | `LWHTTP_ERR_PROTOCOL` | The server sent a malformed response: bad status line, bad header, inconsistent lengths, broken chunking. |
 | `LWHTTP_ERR_VERSION` | The server answered with a major HTTP version other than 1. |
 | `LWHTTP_ERR_UNSUPPORTED` | A scheme other than `http`/`https`, or a compressed or otherwise encoded response body. |
@@ -22,6 +22,7 @@ Every fallible call returns an {c:type}`lwhttp_error_t`, and `on_complete` recei
 | `LWHTTP_ERR_HEADERS_TOO_LARGE` | The response head or a single header line does not fit in the header store. |
 | `LWHTTP_ERR_REDIRECT` | A `Location` header that cannot be resolved into a URL. |
 | `LWHTTP_ERR_ABORTED` | A callback returned `false`, the request was cancelled, or a body reader ended early. |
+| `LWHTTP_ERR_TIMEOUT` | The connection went silent for {c:member}`lwhttp_client_config_t.timeout_ms` after it was established. |
 
 ## Synchronous and asynchronous errors
 

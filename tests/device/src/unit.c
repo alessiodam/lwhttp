@@ -21,6 +21,7 @@ typedef struct {
   int abort_at;
   uint16_t flags_at_headers;
   bool lengths_ok;
+  bool skip;
 } cap_t;
 
 enum { AB_NONE, AB_STATUS, AB_HEADER, AB_HEADERS, AB_BODY, AB_TRAILER, AB_COMPLETE };
@@ -86,8 +87,15 @@ static int on_message_complete(lwhttp_parser_t *p)
   return c->abort_at == AB_COMPLETE;
 }
 
+static bool skip_field(lwhttp_parser_t *p, const char *name, size_t name_len)
+{
+  cap_t *c = p->user;
+  if (strlen(name) != name_len) c->lengths_ok = false;
+  return c->skip && !strncmp(name, "X-Skip", 6);
+}
+
 static const lwhttp_parser_callbacks_t callbacks = {
-    on_status_line, on_header, on_headers_complete, on_body, on_trailer, on_message_complete,
+    on_status_line, on_header, on_headers_complete, on_body, on_trailer, on_message_complete, skip_field,
 };
 
 static void start(const char *method, size_t line_size)
@@ -397,6 +405,41 @@ static void test_parser_reject(void)
   }
   t_end();
 
+  t_begin("skipped long fields");
+  {
+    static const char m[] = "HTTP/1.1 200 OK\r\nX-Skip-A: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n folded "
+                            "bbbbbbbbbbbbbbbbbbbbbbbbbbbb\r\n"
+                            "X-Keep: k\r\nX-Skip-B: s\r\n  ccccccccccccccccccccccccccccccccccccccccccc\r\n"
+                            "Transfer-Encoding: chunked\r\n\r\n2\r\nhi\r\n0\r\n"
+                            "X-Skip-T: tttttttttttttttttttttttttttttttttttttttttttttttt\r\nX-T: t\r\n\r\n";
+    static const size_t steps[] = {1, 3, 7, 4096};
+    size_t i;
+    for (i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+      lwhttp_error_t e;
+      start("GET", 40);
+      cap.skip = true;
+      e = feed(MSG(m), steps[i]);
+      if (!e) e = lwhttp_parser_finish(&parser);
+      if (!CHECK_INT(e, LWHTTP_OK) || !CHECK_STR(cap.headers, "X-Keep=k;Transfer-Encoding=chunked;") ||
+          !CHECK_STR(cap.trailers, "X-T=t;") || !CHECK_STR(cap.body, "hi") || !CHECK(cap.lengths_ok)) {
+        CHECK_INT(steps[i], 0);
+        break;
+      }
+    }
+    start("GET", 40);
+    CHECK_INT(feed(MSG("HTTP/1.1 200 OK\r\nX-Skip: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n\r\n"), 4096),
+              LWHTTP_ERR_HEADERS_TOO_LARGE);
+    start("GET", 40);
+    cap.skip = true;
+    CHECK_INT(feed(MSG("HTTP/1.1 200 OK\r\nConnection: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n\r\n"), 4096),
+              LWHTTP_ERR_HEADERS_TOO_LARGE);
+    start("GET", 40);
+    cap.skip = true;
+    CHECK_INT(feed(MSG("HTTP/1.1 200 OK\r\nX-Skip-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: a\r\n\r\n"), 4096),
+              LWHTTP_ERR_HEADERS_TOO_LARGE);
+  }
+  t_end();
+
   t_begin("callback aborts");
   {
     int at;
@@ -487,6 +530,9 @@ static void test_writer(void)
   CHECK_INT(b.len, 6);
   CHECK(!lwhttp_buffer_ok(&b));
   CHECK(!memcmp(data, "abc", 3));
+  b.len = SIZE_MAX - 2;
+  lwhttp_buffer_append_str(&b, "saturate");
+  CHECK(b.len == SIZE_MAX);
   t_end();
 }
 
@@ -523,6 +569,7 @@ static void test_tokens(void)
   CHECK_STR(lwhttp_error_string(LWHTTP_OK), "ok");
   CHECK_STR(lwhttp_error_string(LWHTTP_ERR_TLS), "tls failure");
   CHECK_STR(lwhttp_error_string(LWHTTP_ERR_ABORTED), "aborted");
+  CHECK_STR(lwhttp_error_string(LWHTTP_ERR_TIMEOUT), "timed out");
   CHECK_STR(lwhttp_error_string((lwhttp_error_t)200), "unknown error");
   CHECK_STR(lwhttp_version_string(), LWHTTP_VERSION_STRING);
   t_end();
@@ -544,7 +591,7 @@ static void test_urls(void)
   CHECK_INT(lwhttp_url_parse("https://user:pw@[::1]:8443/p/a?x=1#frag", &u), LWHTTP_OK);
   CHECK(u.has_scheme && u.scheme_len == 5 && !memcmp(u.scheme, "https", 5));
   CHECK(u.has_authority && u.authority_len == 18);
-  CHECK(u.has_userinfo && u.userinfo_len == 7 && !memcmp(u.userinfo, "user:pw", 7));
+  CHECK(!memcmp(u.authority, "user:pw@[::1]:8443", 18));
   CHECK(u.ipv6 && u.host_len == 3 && !memcmp(u.host, "::1", 3));
   CHECK(u.has_port && u.port == 8443);
   CHECK(u.path_len == 4 && !memcmp(u.path, "/p/a", 4));
@@ -568,7 +615,7 @@ static void test_urls(void)
   CHECK(!u.has_scheme && u.has_authority && u.host_len == 4);
   CHECK_INT(lwhttp_url_parse("a@b:c@host:1/", &u), LWHTTP_OK);
   CHECK_INT(lwhttp_url_parse("http://a@b@host/", &u), LWHTTP_OK);
-  CHECK(u.host_len == 4 && !memcmp(u.host, "host", 4) && u.userinfo_len == 3);
+  CHECK(u.host_len == 4 && !memcmp(u.host, "host", 4));
   CHECK_INT(lwhttp_url_parse("mailto:x@y", &u), LWHTTP_OK);
   CHECK(u.has_scheme && !u.has_authority && u.path_len == 3);
   t_end();

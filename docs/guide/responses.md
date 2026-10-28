@@ -60,5 +60,24 @@ To receive compressed bytes on purpose, send your own `Accept-Encoding` header. 
 
 ## Limits
 
-The whole response head and any trailers must fit in {c:member}`lwhttp_client_config_t.header_size` bytes
+The stored header fields and any trailers must fit in {c:member}`lwhttp_client_config_t.header_size` bytes
 (4096 by default). Exceeding it ends the request with `LWHTTP_ERR_HEADERS_TOO_LARGE`. See [memory](memory.md).
+
+## Keeping only some headers
+
+Most programs read one or two response headers. List them in
+{c:member}`lwhttp_client_config_t.keep_headers` and the client stores only those (plus `Location`, which redirects
+need). Other fields take no space, and lines too long for the store are skipped instead of failing the request:
+
+```c
+static const char *const keep[] = {"Content-Type", NULL};
+lwhttp_client_config_t config;
+
+lwhttp_client_config_default(&config);
+config.keep_headers = keep;
+config.header_size = 512;
+client = lwhttp_client_create(&config);
+```
+
+Fields that are not kept are invisible to {c:func}`lwhttp_client_header` and {c:func}`lwhttp_client_headers`.
+`Content-Encoding` is still checked, see [content codings](#content-codings).

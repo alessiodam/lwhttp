@@ -20,6 +20,7 @@ static const char *const error_table[] = {
     "header section too large",
     "redirect failed",
     "aborted",
+    "timed out",
 };
 
 const char *lwhttp_version_string(void) { return LWHTTP_VERSION_STRING; }

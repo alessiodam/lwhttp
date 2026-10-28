@@ -10,7 +10,7 @@
 #include "net.h"
 
 #define BIN "http://httpbin.org"
-#define BINS "https://httpbin.dev"
+#define BINS "https://httpbin.org"
 #define TIMEOUT_MS 90000ul
 #define LWHTTP_RX_LIMIT 513
 
@@ -264,6 +264,7 @@ static void test_client_api(void)
   CHECK_INT(cfg.max_redirects, 5);
   CHECK(cfg.keep_alive);
   CHECK_STR(cfg.user_agent, "LWHTTP/" LWHTTP_VERSION_STRING);
+  CHECK(!cfg.keep_headers);
   t_end();
 
   t_begin("null safety");
@@ -377,7 +378,7 @@ static void test_basic(lwhttp_client_t *c)
   if (begin("https get")) {
     CHECK_INT(fetch(c, NULL, BINS "/get?tls=1"), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
-    CHECK(body_has("httpbin.dev"));
+    CHECK(body_has("https://httpbin.org"));
     CHECK(header_has(c, "content-type", "json"));
     t_end();
   }
@@ -603,6 +604,33 @@ static void test_headers_net(lwhttp_client_t *c)
     }
     t_end();
   }
+  if (begin("kept headers only")) {
+    static const char *const keep[] = {"X-Foo", NULL};
+    static char url[400];
+    lwhttp_client_config_t cfg;
+    lwhttp_client_t *s;
+    size_t n = strlen(BIN "/response-headers?X-Foo=bar&X-Long=");
+    lwhttp_client_config_default(&cfg);
+    cfg.header_size = 256;
+    cfg.keep_headers = keep;
+    s = lwhttp_client_create(&cfg);
+    memcpy(url, BIN "/response-headers?X-Foo=bar&X-Long=", n);
+    memset(url + n, 'a', 300);
+    url[n + 300] = '\0';
+    if (CHECK(s)) {
+      CHECK_INT(fetch(s, NULL, url), LWHTTP_OK);
+      CHECK_INT(runs[0].status, 200);
+      CHECK_STR(lwhttp_client_header(s, "x-foo"), "bar");
+      CHECK(!lwhttp_client_header(s, "X-Long"));
+      CHECK_INT(lwhttp_headers_count(lwhttp_client_headers(s)), 1);
+      CHECK_INT(fetch(s, NULL, BIN "/gzip"), LWHTTP_ERR_UNSUPPORTED);
+      CHECK_INT(fetch(s, NULL, BIN "/redirect/1"), LWHTTP_OK);
+      CHECK_INT(runs[0].status, 200);
+      CHECK_INT(fetch(s, "HEAD", "https://duckduckgo.com/"), LWHTTP_OK);
+      lwhttp_client_destroy(s);
+    }
+    t_end();
+  }
 }
 
 static void test_redirects(lwhttp_client_t *c)
@@ -688,9 +716,9 @@ static void test_redirects(lwhttp_client_t *c)
   post_body(c, "308 keeps PUT body", "PUT", BIN "/redirect-to?url=%2Fput&status_code=308", "lwhttp308", false,
             "lwhttp308");
   if (begin("http to https redirect")) {
-    CHECK_INT(fetch(c, NULL, BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.dev%2Fget"), LWHTTP_OK);
+    CHECK_INT(fetch(c, NULL, BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fget"), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
-    CHECK(!strncmp(lwhttp_client_url(c), "https://httpbin.dev/get", 23));
+    CHECK(!strncmp(lwhttp_client_url(c), "https://httpbin.org/get", 23));
     t_end();
   }
   if (begin("auth kept on same origin")) {
@@ -702,14 +730,15 @@ static void test_redirects(lwhttp_client_t *c)
     t_end();
   }
   if (begin("custom Host dropped cross origin")) {
-    static const lwhttp_header_t host[] = {{"Host", "httpbin.org"}};
+    static const lwhttp_header_t host[] = {{"Host", "httpbin.org:80"}};
     lwhttp_request_t hreq = {0};
-    hreq.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.dev%2Fheaders";
+    hreq.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fheaders";
     hreq.headers = host;
     hreq.header_count = 1;
     CHECK_INT(perform(c, &hreq, fresh(0)), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
-    CHECK(body_has("httpbin.dev"));
+    CHECK(body_has("httpbin.org"));
+    CHECK(!body_has("httpbin.org:80"));
     t_end();
   }
   if (begin("custom target only on first hop")) {
@@ -723,7 +752,7 @@ static void test_redirects(lwhttp_client_t *c)
     t_end();
   }
   if (begin("auth dropped cross origin")) {
-    req.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.dev%2Fheaders";
+    req.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fheaders";
     req.headers = auth;
     req.header_count = 1;
     CHECK_INT(perform(c, &req, fresh(0)), LWHTTP_OK);
@@ -874,7 +903,7 @@ static void test_failures(void)
     if (CHECK(c)) {
       uint32_t start = lwip_now_ms();
       e = fetch(c, NULL, BIN "/delay/10");
-      CHECK(e != LWHTTP_OK);
+      CHECK_INT(e, LWHTTP_ERR_TIMEOUT);
       CHECK(lwip_now_ms() - start < 9500);
       t_note(lwhttp_error_string(e));
       lwhttp_client_destroy(c);
@@ -931,14 +960,14 @@ static void test_tls_probes(void)
 {
   t_section("network: tls supported chains");
   tls_probe("tls13.akamai.io (ISRG RSA)", "https://tls13.akamai.io/", LWHTTP_OK);
-  tls_probe("httpbin.dev (ISRG RSA)", "https://httpbin.dev/get", LWHTTP_OK);
+  tls_probe("httpbin.org (ISRG RSA)", "https://httpbin.org/get", LWHTTP_OK);
   tls_probe("raw.githubusercontent (ISRG)", "https://raw.githubusercontent.com/github/gitignore/main/C.gitignore",
             LWHTTP_OK);
   tls_probe("duckduckgo.com (DigiCert G2)", "https://duckduckgo.com/", LWHTTP_OK);
   tls_probe("www.amazon.com (Starfield)", "https://www.amazon.com/", LWHTTP_OK);
   t_section("network: lwIP-CE tls limits");
   tls_probe("P-384 chain rejected", "https://www.google.com/", LWHTTP_ERR_TLS);
-  tls_probe("TLS 1.2 only rejected", "https://httpbin.org/get", LWHTTP_ERR_TLS);
+  tls_probe("TLS 1.2 only rejected", "https://tls-v1-2.badssl.com:1012/", LWHTTP_ERR_TLS);
 }
 
 static void test_upgrade(void)

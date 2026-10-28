@@ -6,6 +6,7 @@
 static char line[512];
 static char store[1024];
 static lwhttp_headers_t headers;
+static bool skipping;
 
 static int on_field(lwhttp_parser_t *p, const char *name, size_t name_len, const char *value, size_t value_len)
 {
@@ -22,7 +23,14 @@ static int on_body(lwhttp_parser_t *p, const uint8_t *data, size_t len)
   return 0;
 }
 
-static const lwhttp_parser_callbacks_t callbacks = {NULL, on_field, NULL, on_body, on_field, NULL};
+static bool skip_field(lwhttp_parser_t *p, const char *name, size_t name_len)
+{
+  (void)p;
+  if (strlen(name) != name_len || !name_len) __builtin_trap();
+  return skipping;
+}
+
+static const lwhttp_parser_callbacks_t callbacks = {NULL, on_field, NULL, on_body, on_field, NULL, skip_field};
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
@@ -34,6 +42,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   size_t step;
   if (size < 2) return 0;
   lwhttp_headers_init(&headers, store, sizeof(store));
+  skipping = (data[0] & 0x40) != 0;
   lwhttp_parser_init(&p, line, (size_t)(data[0] & 0x80 ? 64 : sizeof(line)), &callbacks, NULL);
   lwhttp_parser_set_request(&p, methods[data[0] & 3]);
   step = (size_t)data[1] + 1;

@@ -22,7 +22,7 @@ extern "C" {
  * Also used in the default ``User-Agent`` (``"LWHTTP/" LWHTTP_VERSION_STRING``). Compare with
  * :c:func:`lwhttp_version_string` to detect a header/library mismatch.
  */
-#define LWHTTP_VERSION_STRING "1.0.0-rc1"
+#define LWHTTP_VERSION_STRING "1.0.0-rc2"
 
 /**
  * Body length meaning "not known in advance".
@@ -135,7 +135,7 @@ typedef enum {
   /** lwIP-CE reported a write error other than "out of memory" or "closed". */
   LWHTTP_ERR_SEND,
   /**
-   * The connection closed (or timed out) before the response was complete. Also returned by
+   * The connection closed before the response was complete. Also returned by
    * :c:func:`lwhttp_parser_finish` for a truncated message.
    */
   LWHTTP_ERR_CLOSED,
@@ -164,7 +164,12 @@ typedef enum {
    * The request or parse was stopped: a callback asked to stop, :c:func:`lwhttp_client_cancel` was
    * called, or a body reader returned an invalid length.
    */
-  LWHTTP_ERR_ABORTED
+  LWHTTP_ERR_ABORTED,
+  /**
+   * The connection was open but nothing was received or acknowledged for
+   * :c:member:`lwhttp_client_config_t.timeout_ms`.
+   */
+  LWHTTP_ERR_TIMEOUT
 } lwhttp_error_t;
 
 /** One request header field, used in :c:member:`lwhttp_request_t.headers`. */
@@ -244,6 +249,18 @@ typedef struct {
    * :return: 0 to continue, nonzero to abort (the parser then enters the error state).
    */
   int (*on_message_complete)(lwhttp_parser_t *parser);
+  /**
+   * Called when a header or trailer line does not fit in the line buffer. Return true to discard the field,
+   * including any folded continuation lines, instead of failing with
+   * :c:enumerator:`LWHTTP_ERR_HEADERS_TOO_LARGE`. ``Content-Length``, ``Transfer-Encoding`` and
+   * ``Connection`` are never offered: the parser needs them.
+   *
+   * :param parser: The parser.
+   * :param name: Field name, NUL-terminated.
+   * :param name_len: Length of ``name``.
+   * :return: true to skip the field, false to fail.
+   */
+  bool (*skip_field)(lwhttp_parser_t *parser, const char *name, size_t name_len);
 } lwhttp_parser_callbacks_t;
 
 /**
@@ -275,9 +292,9 @@ struct lwhttp_parser {
   /** Status code of the current message, or 0 before its status line has been parsed. */
   uint16_t status;
   /** ``LWHTTP_MSG_*`` flags of the current message, valid from ``on_headers_complete`` onward. */
-  uint16_t flags;
+  uint8_t flags;
   /** Internal: header bookkeeping bits. */
-  uint16_t internal;
+  uint8_t internal;
   /** Internal: parser state. */
   uint8_t state;
   /** Internal: request method mode set by :c:func:`lwhttp_parser_set_request`. */
@@ -320,7 +337,7 @@ typedef struct {
   char *data;
   /** Capacity of :c:member:`lwhttp_buffer_t.data` in bytes. */
   size_t size;
-  /** Total bytes appended so far, including any that did not fit. */
+  /** Total bytes appended so far, including any that did not fit; stops at ``SIZE_MAX`` instead of wrapping. */
   size_t len;
 } lwhttp_buffer_t;
 
@@ -336,8 +353,6 @@ typedef struct {
   const char *scheme;
   /** Authority without the leading ``//``: userinfo, host and port. */
   const char *authority;
-  /** Userinfo before the last ``@`` of the authority. */
-  const char *userinfo;
   /** Host, possibly empty; for an IP literal, the address without the brackets. */
   const char *host;
   /** Path, possibly empty. */
@@ -350,8 +365,6 @@ typedef struct {
   size_t scheme_len;
   /** Length of :c:member:`lwhttp_url_t.authority`. */
   size_t authority_len;
-  /** Length of :c:member:`lwhttp_url_t.userinfo`. */
-  size_t userinfo_len;
   /** Length of :c:member:`lwhttp_url_t.host`. */
   size_t host_len;
   /** Length of :c:member:`lwhttp_url_t.path`. */
@@ -366,8 +379,6 @@ typedef struct {
   bool has_scheme;
   /** An authority (``//...``) is present. */
   bool has_authority;
-  /** The authority contains userinfo. */
-  bool has_userinfo;
   /** The authority contains a non-empty port (``host:`` with nothing after the colon does not count). */
   bool has_port;
   /** A query is present, possibly empty. */
@@ -417,8 +428,11 @@ typedef size_t (*lwhttp_body_reader_t)(void *arg, uint8_t *buf, size_t size);
  */
 typedef struct {
   /**
-   * lwIP-CE socket inactivity timeout in milliseconds, covering connect, TLS handshake and transfer. It is
-   * extended by any traffic, so it bounds silence, not total request time. 0 disables it. Default 30000.
+   * Inactivity timeout in milliseconds; it bounds silence, not total request time. While connecting it is
+   * lwIP-CE's socket timeout (:c:enumerator:`LWHTTP_ERR_CONNECT`), which any frame on the interface extends.
+   * Once connected the client also tracks its own connection: received data or acknowledged sent data restarts
+   * it, checked on lwIP-CE's poll tick of about 2 seconds. Expiry after connecting, by either check, ends the
+   * request with :c:enumerator:`LWHTTP_ERR_TIMEOUT`. 0 disables it. Default 30000.
    */
   uint32_t timeout_ms;
   /**
@@ -440,6 +454,14 @@ typedef struct {
    * copied, so the string must outlive the client. Default ``"LWHTTP/" LWHTTP_VERSION_STRING``.
    */
   const char *user_agent;
+  /**
+   * ``NULL``-terminated list of response header and trailer names to store (case-insensitive), or ``NULL``
+   * to store every field. ``Location`` is always stored for redirects. Fields not listed take no space in
+   * the header store, and lines too long for the store are skipped instead of failing the request, so a
+   * small :c:member:`lwhttp_client_config_t.header_size` is enough. The array and strings are used by
+   * pointer and must outlive the client. Default ``NULL``.
+   */
+  const char *const *keep_headers;
 } lwhttp_client_config_t;
 
 /**
@@ -863,7 +885,7 @@ lwhttp_error_t lwhttp_url_resolve(const char *base, const char *reference, char 
 
 /**
  * Fill a configuration with the defaults: 30000 ms timeout, 4096-byte header buffer, 5 redirects,
- * keep-alive on, ``User-Agent: LWHTTP/<version>``.
+ * keep-alive on, ``User-Agent: LWHTTP/<version>``, every response header kept.
  *
  * :param config: Configuration to fill.
  */
@@ -871,7 +893,7 @@ void lwhttp_client_config_default(lwhttp_client_config_t *config);
 /**
  * Create a client.
  *
- * Allocates one block from the lwIP-CE heap of about ``header_size`` + 1 KB + the client struct. Each
+ * Allocates one block from the lwIP-CE heap of ``header_size`` + 512 bytes + the client struct. Each
  * request also makes small allocations (URL copy, host name, request head) while it runs. No connection is
  * opened until the first request.
  *
@@ -918,7 +940,8 @@ void lwhttp_client_destroy(lwhttp_client_t *client);
  *     target, header or ``User-Agent``; user ``Content-Length``/``Transfer-Encoding``),
  *     :c:enumerator:`LWHTTP_ERR_STATE` (a request is in progress or the client is being destroyed),
  *     :c:enumerator:`LWHTTP_ERR_URL` (unparsable URL, or no scheme or host),
- *     :c:enumerator:`LWHTTP_ERR_UNSUPPORTED` (scheme not ``http``/``https``), :c:enumerator:`LWHTTP_ERR_MEM`,
+ *     :c:enumerator:`LWHTTP_ERR_UNSUPPORTED` (scheme not ``http``/``https``),
+ *     :c:enumerator:`LWHTTP_ERR_TOO_LARGE` (request head longer than ``SIZE_MAX``), :c:enumerator:`LWHTTP_ERR_MEM`,
  *     or :c:enumerator:`LWHTTP_ERR_CONNECT` (lwIP-CE refused to start connecting). Failures detected after
  *     the URL was copied (URL, scheme, header and connection errors) also mark the client done with that
  *     result for :c:func:`lwhttp_client_result`.

@@ -25,21 +25,14 @@ lwhttp_error_t lwhttp_url_parse(const char *s, lwhttp_url_t *url)
   if (p[0] == '/' && p[1] == '/') {
     const char *a = p + 2;
     const char *end = a;
-    const char *at = NULL;
     const char *h = a;
     while (*end && *end != '/' && *end != '?' && *end != '#') {
-      if (*end == '@') at = end;
+      if (*end == '@') h = end + 1;
       end++;
     }
     url->has_authority = true;
     url->authority = a;
     url->authority_len = (size_t)(end - a);
-    if (at) {
-      url->has_userinfo = true;
-      url->userinfo = a;
-      url->userinfo_len = (size_t)(at - a);
-      h = at + 1;
-    }
     if (*h == '[') {
       q = memchr(h, ']', (size_t)(end - h));
       if (!q) return LWHTTP_ERR_URL;
@@ -142,9 +135,9 @@ lwhttp_error_t lwhttp_url_resolve(const char *base, const char *reference, char 
   else if (b.has_authority) auth = &b;
   lwhttp_buffer_init(&o, out, size - 1);
   lwhttp_buffer_append(&o, scheme->scheme, scheme->scheme_len);
-  lwhttp_buffer_append(&o, ":", 1);
+  lwhttp_buffer_append_str(&o, ":");
   if (auth) {
-    lwhttp_buffer_append(&o, "//", 2);
+    lwhttp_buffer_append_str(&o, "//");
     lwhttp_buffer_append(&o, auth->authority, auth->authority_len);
   }
   start = o.len;
@@ -158,7 +151,7 @@ lwhttp_error_t lwhttp_url_resolve(const char *base, const char *reference, char 
   } else {
     if (r.path[0] != '/') {
       if (b.has_authority && !b.path_len) {
-        lwhttp_buffer_append(&o, "/", 1);
+        lwhttp_buffer_append_str(&o, "/");
       } else {
         size_t n = b.path_len;
         while (n && b.path[n - 1] != '/') n--;
@@ -177,11 +170,11 @@ lwhttp_error_t lwhttp_url_resolve(const char *base, const char *reference, char 
     o.len += 2;
   }
   if (query->has_query) {
-    lwhttp_buffer_append(&o, "?", 1);
+    lwhttp_buffer_append_str(&o, "?");
     lwhttp_buffer_append(&o, query->query, query->query_len);
   }
   if (r.has_fragment) {
-    lwhttp_buffer_append(&o, "#", 1);
+    lwhttp_buffer_append_str(&o, "#");
     lwhttp_buffer_append(&o, r.fragment, r.fragment_len);
   }
   if (!lwhttp_buffer_ok(&o)) return LWHTTP_ERR_TOO_LARGE;

@@ -11,10 +11,10 @@ buffers and TLS. It has no static buffers of its own beyond a few bytes.
 | --- | --- |
 | Client state | about 200 bytes |
 | Receive buffer | 512 bytes |
-| Send buffer | 512 bytes |
 | Header store | {c:member}`lwhttp_client_config_t.header_size`, 4096 by default |
 
-The default client therefore needs about 5.3 KB of contiguous heap.
+The default client therefore needs about 4.8 KB of contiguous heap. A request with a
+{c:member}`lwhttp_request_t.body_reader` also allocates a 512-byte send buffer, kept until the client is destroyed.
 
 ## Per request
 
@@ -35,6 +35,11 @@ must also fit.
 | `github.com` | about 5.5 KB, with a 4 KB line |
 
 When you only talk to your own server, 1 KB is often enough. The minimum is 256 bytes.
+
+With {c:member}`lwhttp_client_config_t.keep_headers` only the listed fields are stored and over-long lines of the
+others are skipped, so the store only has to hold the fields you keep plus the 128 spare bytes. 512 bytes is plenty
+for a `Content-Type` and a `Location` from any of the servers above. See
+[keeping only some headers](responses.md#keeping-only-some-headers).
 
 ## Recommendations
 

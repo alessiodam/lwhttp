@@ -19,9 +19,14 @@ reader. Other requests fail with `LWHTTP_ERR_CLOSED`, because they may already h
 
 ## Timeouts
 
-{c:member}`lwhttp_client_config_t.timeout_ms` (30 seconds by default) is an inactivity timeout, enforced by
-lwIP-CE on each connection. Any traffic in either direction restarts it, so a slow but steady download never times
-out. A timeout while connecting reports `LWHTTP_ERR_CONNECT`; later it reports `LWHTTP_ERR_CLOSED`.
+{c:member}`lwhttp_client_config_t.timeout_ms` (30 seconds by default) is an inactivity timeout, so a slow but
+steady download never times out.
+
+- While connecting, lwIP-CE enforces it. lwIP-CE restarts it on any frame the interface receives, so other traffic
+  can delay it. Expiry reports `LWHTTP_ERR_CONNECT`.
+- Once connected, the client also enforces it per connection: received data and acknowledged sent data restart it.
+  It is checked on lwIP-CE's poll tick, about every 2 seconds, so it fires up to 2 seconds late. Expiry after
+  connecting, whichever check notices it first, reports `LWHTTP_ERR_TIMEOUT`.
 
 ## Cancelling
 

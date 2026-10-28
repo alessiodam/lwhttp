@@ -86,7 +86,7 @@ int main(void)
 
   request.method = "HEAD";
   print("HEAD " URL);
-  progress.done = false;
+  progress = (progress_t){0};
   lwhttp_client_request_sync(client, &request, &handlers, &progress);
 
   lwhttp_client_destroy(client);

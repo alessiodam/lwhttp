@@ -13,7 +13,7 @@ LWHTTP_NOINLINE void lwhttp_buffer_append(lwhttp_buffer_t *buffer, const void *d
 {
   if (len && buffer->len <= buffer->size && len <= buffer->size - buffer->len)
     memcpy(buffer->data + buffer->len, data, len);
-  buffer->len += len;
+  buffer->len = len > SIZE_MAX - buffer->len ? SIZE_MAX : buffer->len + len;
 }
 
 void lwhttp_buffer_append_str(lwhttp_buffer_t *buffer, const char *s) { lwhttp_buffer_append(buffer, s, strlen(s)); }
@@ -36,10 +36,10 @@ bool lwhttp_write_header(lwhttp_buffer_t *buffer, const char *name, const char *
 {
   if (!lwhttp_is_token(name) || !value || !lwhttp__value_ok(value, strlen(value))) return false;
   lwhttp_buffer_append_str(buffer, name);
-  lwhttp_buffer_append(buffer, ": ", 2);
+  lwhttp_buffer_append_str(buffer, ": ");
   lwhttp_buffer_append_str(buffer, value);
-  lwhttp_buffer_append(buffer, "\r\n", 2);
+  lwhttp_buffer_append_str(buffer, "\r\n");
   return true;
 }
 
-void lwhttp_write_end(lwhttp_buffer_t *buffer) { lwhttp_buffer_append(buffer, "\r\n", 2); }
+void lwhttp_write_end(lwhttp_buffer_t *buffer) { lwhttp_buffer_append_str(buffer, "\r\n"); }

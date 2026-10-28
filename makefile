@@ -21,6 +21,7 @@ USB_STEP ?=
 HTTPTEST_MODE ?= offline
 LWIP_INSTALL_CRC ?= F7C03D8D
 HTTPTEST_VERDICT_CRC ?= 46258A1A
+HTTPTEST_TIMEOUT ?= 900000
 VERSION := $(shell sed -n 's/^\#define LWHTTP_VERSION_STRING "\(.*\)"/\1/p' lwhttp.h)
 CORE := src/parser.c src/headers.c src/writer.c src/url.c src/util.c
 SHARED_TESTS := tests/device/src/check.c tests/device/src/unit.c
@@ -118,7 +119,7 @@ emulator-test: httptest
 	printf '%.1s' $(HTTPTEST_MODE) > obj/httpci.bin
 	$(CONVBIN) -i obj/httpci.bin -o $(CI_FILES)/HTTPCI.8xv -j bin -k 8xv -n HTTPCI
 	$(PYTHON) -I tests/device/autotest.py --files $(CI_FILES) --install-crc $(LWIP_INSTALL_CRC) \
-		--verdict-crc $(HTTPTEST_VERDICT_CRC) --save-var --mode $(HTTPTEST_MODE) \
+		--verdict-crc $(HTTPTEST_VERDICT_CRC) --timeout $(HTTPTEST_TIMEOUT) --save-var --mode $(HTTPTEST_MODE) \
 		$(if $(USB_STEP),--usb '$(USB_STEP)') --out tests/device/autotest.json
 	cd tests/device && AUTOTESTER_ROM="$(AUTOTESTER_ROM)" $(CEMU_AUTOTESTER) "$$PWD/autotest.json"; status=$$?; \
 		$(PYTHON) -I httplog.py HTTPLOG.8xv || status=1; exit $$status

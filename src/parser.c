@@ -14,14 +14,16 @@ enum {
   ST_CHUNK_SIZE,
   ST_CHUNK_DATA,
   ST_CHUNK_END,
+  ST_SKIP,
+  ST_SKIP_END,
   ST_DONE,
   ST_ERROR
 };
 
 enum { MODE_NONE, MODE_LENGTH, MODE_CHUNKED, MODE_CLOSE };
 
-static const uint16_t mode_flags[] = {LWHTTP_MSG_NO_BODY, LWHTTP_MSG_CONTENT_LENGTH, LWHTTP_MSG_CHUNKED,
-                                      LWHTTP_MSG_CLOSE_DELIMITED};
+static const uint8_t mode_flags[] = {LWHTTP_MSG_NO_BODY, LWHTTP_MSG_CONTENT_LENGTH, LWHTTP_MSG_CHUNKED,
+                                     LWHTTP_MSG_CLOSE_DELIMITED};
 
 #define PF_CL 0x0001u
 #define PF_TE 0x0002u
@@ -29,6 +31,7 @@ static const uint16_t mode_flags[] = {LWHTTP_MSG_NO_BODY, LWHTTP_MSG_CONTENT_LEN
 #define PF_TE_FINAL 0x0008u
 #define PF_CLOSE 0x0010u
 #define PF_KEEP 0x0020u
+#define PF_SKIP_TRAILER 0x0040u
 
 #define RQ_HEAD 1
 #define RQ_CONNECT 2
@@ -82,8 +85,15 @@ static int take_line(lwhttp_parser_t *p, const uint8_t *data, size_t len, size_t
 {
   const uint8_t *lf = memchr(data, '\n', len);
   size_t n = lf ? (size_t)(lf - data) : len;
+  size_t room = p->line_size - p->line_len - 1;
   *used = lf ? n + 1 : n;
-  if (n >= p->line_size - p->line_len) return -2;
+  if (n > room) {
+    memcpy(p->line + p->line_len, data, room);
+    p->line_len += room;
+    p->line[p->line_len] = '\0';
+    *used = room;
+    return -1;
+  }
   memcpy(p->line + p->line_len, data, n);
   p->line_len += n;
   if (!lf) return 0;
@@ -100,7 +110,7 @@ static char *version(lwhttp_parser_t *p, char *s)
   return s + 8;
 }
 
-static lwhttp_error_t start_line(lwhttp_parser_t *p)
+LWHTTP_NOINLINE static lwhttp_error_t start_line(lwhttp_parser_t *p)
 {
   const lwhttp_parser_callbacks_t *cb = p->callbacks;
   char *q = version(p, p->line);
@@ -170,7 +180,7 @@ static lwhttp_error_t semantics(lwhttp_parser_t *p, const char *name, const char
           if (p->internal & PF_TE_CHUNKED) return LWHTTP_ERR_PROTOCOL;
           p->internal |= PF_TE_CHUNKED | PF_TE_FINAL;
         } else {
-          p->internal &= (uint16_t)~PF_TE_FINAL;
+          p->internal &= (uint8_t)~PF_TE_FINAL;
           p->flags |= LWHTTP_MSG_TRANSFER_CODED;
         }
       }
@@ -217,6 +227,27 @@ static lwhttp_error_t field(lwhttp_parser_t *p, bool trailer)
   return r ? LWHTTP_ERR_ABORTED : LWHTTP_OK;
 }
 
+static bool skip_field(lwhttp_parser_t *p)
+{
+  const lwhttp_parser_callbacks_t *cb = p->callbacks;
+  char *name = p->line;
+  char *q = name;
+  size_t n;
+  while (LWHTTP_TCHAR(*q)) q++;
+  n = (size_t)(q - name);
+  while (LWHTTP_IS_OWS(*q)) q++;
+  if (!n || *q != ':' || !cb || !cb->skip_field) return false;
+  name[n] = '\0';
+  if (lwhttp__ieq(name, "content-length") || lwhttp__ieq(name, "transfer-encoding") ||
+      lwhttp__ieq(name, "connection") || !cb->skip_field(p, name, n))
+    return false;
+  if (p->state == ST_TRAILER) p->internal |= PF_SKIP_TRAILER;
+  else p->internal &= (uint8_t)~PF_SKIP_TRAILER;
+  p->state = ST_SKIP;
+  p->line_len = 0;
+  return true;
+}
+
 static lwhttp_error_t complete(lwhttp_parser_t *p)
 {
   const lwhttp_parser_callbacks_t *cb = p->callbacks;
@@ -228,7 +259,7 @@ static lwhttp_error_t complete(lwhttp_parser_t *p)
 static lwhttp_error_t headers_done(lwhttp_parser_t *p)
 {
   const lwhttp_parser_callbacks_t *cb = p->callbacks;
-  uint16_t in = p->internal;
+  uint8_t in = p->internal;
   bool keep = p->version_minor ? !(in & PF_CLOSE) : (in & PF_KEEP) && !(in & PF_CLOSE);
   uint8_t mode;
   int r;
@@ -254,8 +285,8 @@ static lwhttp_error_t headers_done(lwhttp_parser_t *p)
   r = cb && cb->on_headers_complete ? cb->on_headers_complete(p) : 0;
   if (r == LWHTTP_PARSER_SKIP_BODY) {
     mode = MODE_NONE;
-    p->flags = (uint16_t)((p->flags & ~(LWHTTP_MSG_CONTENT_LENGTH | LWHTTP_MSG_CHUNKED | LWHTTP_MSG_CLOSE_DELIMITED)) |
-                          LWHTTP_MSG_NO_BODY);
+    p->flags = (uint8_t)((p->flags & ~(LWHTTP_MSG_CONTENT_LENGTH | LWHTTP_MSG_CHUNKED | LWHTTP_MSG_CLOSE_DELIMITED)) |
+                         LWHTTP_MSG_NO_BODY);
   } else if (r) {
     return LWHTTP_ERR_ABORTED;
   }
@@ -320,7 +351,7 @@ size_t lwhttp_parser_execute(lwhttp_parser_t *parser, const uint8_t *data, size_
     case ST_START_LINE:
       r = take_line(p, data + i, len - i, &n);
       i += n;
-      if (r < 0) return fail(p, r == -1 ? LWHTTP_ERR_PROTOCOL : LWHTTP_ERR_HEADERS_TOO_LARGE, i);
+      if (r < 0) return fail(p, LWHTTP_ERR_HEADERS_TOO_LARGE, i);
       if (r) {
         e = start_line(p);
         if (e) return fail(p, e, i);
@@ -333,7 +364,10 @@ size_t lwhttp_parser_execute(lwhttp_parser_t *parser, const uint8_t *data, size_
       if (!p->line_len && LWHTTP_IS_OWS(data[i])) return fail(p, LWHTTP_ERR_PROTOCOL, i);
       r = take_line(p, data + i, len - i, &n);
       i += n;
-      if (r < 0) return fail(p, r == -1 ? LWHTTP_ERR_PROTOCOL : LWHTTP_ERR_HEADERS_TOO_LARGE, i);
+      if (r < 0) {
+        if (skip_field(p)) break;
+        return fail(p, LWHTTP_ERR_HEADERS_TOO_LARGE, i);
+      }
       if (!r) break;
       if (p->line_len) {
         p->state++;
@@ -346,9 +380,10 @@ size_t lwhttp_parser_execute(lwhttp_parser_t *parser, const uint8_t *data, size_
     case ST_HEADER_END:
     case ST_TRAILER_END:
       if (LWHTTP_IS_OWS(data[i])) {
-        if (p->line_len + 1 >= p->line_size) return fail(p, LWHTTP_ERR_HEADERS_TOO_LARGE, i);
-        p->line[p->line_len++] = ' ';
-        i++;
+        if (p->line_len + 1 < p->line_size) {
+          p->line[p->line_len++] = ' ';
+          i++;
+        }
       } else {
         e = field(p, p->state == ST_TRAILER_END);
         if (e) return fail(p, e, i);
@@ -377,7 +412,7 @@ size_t lwhttp_parser_execute(lwhttp_parser_t *parser, const uint8_t *data, size_
     case ST_CHUNK_END:
       r = take_line(p, data + i, len - i, &n);
       i += n;
-      if (r < 0) return fail(p, r == -1 ? LWHTTP_ERR_PROTOCOL : LWHTTP_ERR_TOO_LARGE, i);
+      if (r < 0) return fail(p, LWHTTP_ERR_TOO_LARGE, i);
       if (!r) break;
       if (p->state == ST_CHUNK_END) {
         if (p->line_len) return fail(p, LWHTTP_ERR_PROTOCOL, i);
@@ -387,6 +422,21 @@ size_t lwhttp_parser_execute(lwhttp_parser_t *parser, const uint8_t *data, size_
         if (e) return fail(p, e, i);
       }
       p->line_len = 0;
+      break;
+    case ST_SKIP:
+      n = len - i;
+      {
+        const uint8_t *lf = memchr(data + i, '\n', n);
+        if (lf) {
+          n = (size_t)(lf - (data + i)) + 1;
+          p->state = ST_SKIP_END;
+        }
+      }
+      i += n;
+      break;
+    case ST_SKIP_END:
+      if (LWHTTP_IS_OWS(data[i])) p->state = ST_SKIP;
+      else p->state = (p->internal & PF_SKIP_TRAILER) ? ST_TRAILER : ST_HEADER;
       break;
     default: return i;
     }
