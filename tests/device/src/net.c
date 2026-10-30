@@ -10,7 +10,7 @@
 #include "net.h"
 
 #define BIN "http://httpbin.org"
-#define BINS "https://httpbin.org"
+#define TLS "https://tls13.akamai.io/"
 #define TIMEOUT_MS 90000ul
 #define LWHTTP_RX_LIMIT 513
 
@@ -376,21 +376,21 @@ static void test_basic(lwhttp_client_t *c)
     t_end();
   }
   if (begin("https get")) {
-    CHECK_INT(fetch(c, NULL, BINS "/get?tls=1"), LWHTTP_OK);
+    CHECK_INT(fetch(c, NULL, TLS), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
-    CHECK(body_has("https://httpbin.org"));
-    CHECK(header_has(c, "content-type", "json"));
+    CHECK(body_has("<html"));
+    CHECK(header_has(c, "content-type", "text/html"));
     t_end();
   }
   if (begin("https keep-alive reuse")) {
     uint16_t reused = lwhttp_client_stats(c)->reused;
-    CHECK_INT(fetch(c, NULL, BINS "/get?tls=2"), LWHTTP_OK);
+    CHECK_INT(fetch(c, NULL, TLS), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
     CHECK(lwhttp_client_stats(c)->reused == reused + 1);
     t_end();
   }
   if (begin("https head")) {
-    CHECK_INT(fetch(c, "HEAD", "https://tls13.akamai.io/"), LWHTTP_OK);
+    CHECK_INT(fetch(c, "HEAD", TLS), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
     CHECK_INT(runs[0].bytes, 0);
     CHECK(lwhttp_client_header(c, "Content-Length") != NULL);
@@ -511,7 +511,11 @@ static void test_bodies(lwhttp_client_t *c)
   post_body(c, "post buffer", "POST", BIN "/post", "lwhttp=1&x=2", false, "lwhttp=1&x=2");
   post_body(c, "put buffer", "PUT", BIN "/put", "put-body", false, "put-body");
   post_body(c, "expect 100-continue", "POST", BIN "/post", "continue-body", true, "continue-body");
-  post_body(c, "https post", "POST", BINS "/post", "secure-body", false, "secure-body");
+  if (begin("https post")) {
+    CHECK_INT(send_body(c, "POST", TLS, "secure-body", false), LWHTTP_OK);
+    CHECK(runs[0].status >= 200);
+    t_end();
+  }
   if (begin("post reader with length")) {
     lwhttp_request_t req = {0};
     stream_off = 0;
@@ -716,9 +720,9 @@ static void test_redirects(lwhttp_client_t *c)
   post_body(c, "308 keeps PUT body", "PUT", BIN "/redirect-to?url=%2Fput&status_code=308", "lwhttp308", false,
             "lwhttp308");
   if (begin("http to https redirect")) {
-    CHECK_INT(fetch(c, NULL, BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fget"), LWHTTP_OK);
+    CHECK_INT(fetch(c, NULL, "http://raw.githubusercontent.com/github/gitignore/main/C.gitignore"), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
-    CHECK(!strncmp(lwhttp_client_url(c), "https://httpbin.org/get", 23));
+    CHECK(!strcmp(lwhttp_client_url(c), "https://raw.githubusercontent.com/github/gitignore/main/C.gitignore"));
     t_end();
   }
   if (begin("auth kept on same origin")) {
@@ -730,15 +734,15 @@ static void test_redirects(lwhttp_client_t *c)
     t_end();
   }
   if (begin("custom Host dropped cross origin")) {
-    static const lwhttp_header_t host[] = {{"Host", "httpbin.org:80"}};
+    static const lwhttp_header_t host[] = {{"Host", "eu.httpbin.org:80"}};
     lwhttp_request_t hreq = {0};
-    hreq.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fheaders";
+    hreq.url = "http://eu.httpbin.org/redirect-to?url=http%3A%2F%2Fhttpbin.org%2Fheaders";
     hreq.headers = host;
     hreq.header_count = 1;
     CHECK_INT(perform(c, &hreq, fresh(0)), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
     CHECK(body_has("httpbin.org"));
-    CHECK(!body_has("httpbin.org:80"));
+    CHECK(!body_has("eu.httpbin.org"));
     t_end();
   }
   if (begin("custom target only on first hop")) {
@@ -752,7 +756,7 @@ static void test_redirects(lwhttp_client_t *c)
     t_end();
   }
   if (begin("auth dropped cross origin")) {
-    req.url = BIN "/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fheaders";
+    req.url = "http://eu.httpbin.org/redirect-to?url=http%3A%2F%2Fhttpbin.org%2Fheaders";
     req.headers = auth;
     req.header_count = 1;
     CHECK_INT(perform(c, &req, fresh(0)), LWHTTP_OK);
@@ -959,14 +963,14 @@ static void tls_probe(const char *name, const char *url, lwhttp_error_t want)
 static void test_tls_probes(void)
 {
   t_section("network: tls supported chains");
-  tls_probe("tls13.akamai.io (ISRG RSA)", "https://tls13.akamai.io/", LWHTTP_OK);
-  tls_probe("httpbin.org (ISRG RSA)", "https://httpbin.org/get", LWHTTP_OK);
+  tls_probe("tls13.akamai.io (ISRG RSA)", TLS, LWHTTP_OK);
   tls_probe("raw.githubusercontent (ISRG)", "https://raw.githubusercontent.com/github/gitignore/main/C.gitignore",
             LWHTTP_OK);
   tls_probe("duckduckgo.com (DigiCert G2)", "https://duckduckgo.com/", LWHTTP_OK);
   tls_probe("www.amazon.com (Starfield)", "https://www.amazon.com/", LWHTTP_OK);
   t_section("network: lwIP-CE tls limits");
   tls_probe("P-384 chain rejected", "https://www.google.com/", LWHTTP_ERR_TLS);
+  tls_probe("Let's Encrypt YE1 rejected", "https://httpbin.org/get", LWHTTP_ERR_TLS);
   tls_probe("TLS 1.2 only rejected", "https://tls-v1-2.badssl.com:1012/", LWHTTP_ERR_TLS);
 }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0
+
+First stable release. ABI and API are unchanged from rc2.
+
+- Built and tested against lwIP-CE `v3.0.0`. No library changes were needed.
+- HTTPTEST's HTTPS cases moved off `httpbin.org`, whose new Let's Encrypt `YE1` ECDSA chain uses P-384 keys that
+  lwIP-CE rejects. Cross-origin redirect cases now go from `eu.httpbin.org` to `httpbin.org`.
+
 ## 1.0.0-rc2
 
 Second release candidate. It breaks the ABI and API of rc1: rebuild every program against the new `LWHTTP.lib`
