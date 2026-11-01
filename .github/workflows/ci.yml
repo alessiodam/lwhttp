@@ -240,11 +240,12 @@ jobs:
         if: steps.rom.outputs.available == 'true'
         id: cedev
 
-      - uses: alessiodam/cemu-net-action@v1
+      - uses: alessiodam/cemu-net-action@v1.1
         if: steps.rom.outputs.available == 'true'
         id: cemu
         with:
           truststore: true
+          cemu-ref: ${{ steps.versions.outputs.CEMU_REF }}
 
       - name: Fetch ROM and CE libraries
         if: steps.rom.outputs.available == 'true'
