@@ -9,7 +9,8 @@
 #include "check.h"
 #include "net.h"
 
-#define BIN "http://httpbin.org"
+#define BIN "http://192.168.84.1:8080"
+#define BIN2 "http://192.168.84.1:8081"
 #define TLS "https://tls13.akamai.io/"
 #define TIMEOUT_MS 90000ul
 #define LWHTTP_RX_LIMIT 513
@@ -734,15 +735,15 @@ static void test_redirects(lwhttp_client_t *c)
     t_end();
   }
   if (begin("custom Host dropped cross origin")) {
-    static const lwhttp_header_t host[] = {{"Host", "eu.httpbin.org:80"}};
+    static const lwhttp_header_t host[] = {{"Host", "192.168.84.1:8081"}};
     lwhttp_request_t hreq = {0};
-    hreq.url = "http://eu.httpbin.org/redirect-to?url=http%3A%2F%2Fhttpbin.org%2Fheaders";
+    hreq.url = BIN2 "/redirect-to?url=http%3A%2F%2F192.168.84.1%3A8080%2Fheaders";
     hreq.headers = host;
     hreq.header_count = 1;
     CHECK_INT(perform(c, &hreq, fresh(0)), LWHTTP_OK);
     CHECK_INT(runs[0].status, 200);
-    CHECK(body_has("httpbin.org"));
-    CHECK(!body_has("eu.httpbin.org"));
+    CHECK(body_has("192.168.84.1:8080"));
+    CHECK(!body_has("192.168.84.1:8081"));
     t_end();
   }
   if (begin("custom target only on first hop")) {
@@ -756,7 +757,7 @@ static void test_redirects(lwhttp_client_t *c)
     t_end();
   }
   if (begin("auth dropped cross origin")) {
-    req.url = "http://eu.httpbin.org/redirect-to?url=http%3A%2F%2Fhttpbin.org%2Fheaders";
+    req.url = BIN2 "/redirect-to?url=http%3A%2F%2F192.168.84.1%3A8080%2Fheaders";
     req.headers = auth;
     req.header_count = 1;
     CHECK_INT(perform(c, &req, fresh(0)), LWHTTP_OK);
@@ -991,7 +992,7 @@ static void test_upgrade(void)
     const uint8_t *pending = NULL;
     size_t pending_len = 99;
     struct lwip_socket *sock;
-    req.url = "https://echo.websocket.in/";
+    req.url = "https://websocket-echo.com/";
     req.headers = ws;
     req.header_count = 4;
     CHECK_INT(perform(c, &req, fresh(0)), LWHTTP_OK);

@@ -46,7 +46,7 @@ picks the suite:
 | Mode | What runs |
 | --- | --- |
 | `offline` | The unit suite and the offline client checks. The default, needs no network. |
-| `full` | Adds the network suite against httpbin, example.com and the failure cases. |
+| `full` | Adds the network suite against a local httpbin, example.com and the failure cases. |
 | `extended` | Adds the TLS chain probes against third-party hosts and the WebSocket upgrade. |
 
 The network modes need [CEmu-lwIP-CE](https://github.com/alessiodam/CEmu-lwIP-CE)'s autotester, a TAP interface and
@@ -55,6 +55,14 @@ the lwIP-CE truststore, which [cemu-net-action](https://github.com/alessiodam/ce
 ```sh
 make emulator-test HTTPTEST_MODE=full TRUSTSTORE=lwIPCERT.8xv \
   USB_STEP='usb|eth,cemu0,dhcp=192.168.84.2/24,gw=192.168.84.1,dns=1.1.1.1' ...
+```
+
+The plain HTTP cases talk to [httpbin](https://github.com/psf/httpbin) on the TAP gateway, ports 8080 and 8081 (the
+second port is a separate origin for the cross-origin redirect checks), so they do not depend on public rate limits:
+
+```sh
+python3 -m venv ~/.httpbin && ~/.httpbin/bin/pip install httpbin gunicorn
+~/.httpbin/bin/gunicorn -D -k gthread --threads 8 -b 192.168.84.1:8080 -b 192.168.84.1:8081 httpbin:app
 ```
 
 TLS is slow in the emulator. If the `extended` suite runs out of time, raise `HTTPTEST_TIMEOUT` (milliseconds, 900000

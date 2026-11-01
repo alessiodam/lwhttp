@@ -247,6 +247,13 @@ jobs:
           truststore: true
           cemu-ref: ${{ steps.versions.outputs.CEMU_REF }}
 
+      - name: Start local httpbin
+        if: steps.rom.outputs.available == 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/httpbin"
+          "$RUNNER_TEMP/httpbin/bin/pip" install -q "httpbin==${{ steps.versions.outputs.HTTPBIN_VERSION }}" gunicorn
+          "$RUNNER_TEMP/httpbin/bin/gunicorn" -D -k gthread --threads 8 -b 192.168.84.1:8080 -b 192.168.84.1:8081 httpbin:app
+
       - name: Fetch ROM and CE libraries
         if: steps.rom.outputs.available == 'true'
         env:
