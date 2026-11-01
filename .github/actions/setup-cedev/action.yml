@@ -110,7 +110,7 @@ runs:
       id: lwip
       shell: bash
       run: |
-        if [ "${{ steps.ref.outputs.mode }}" = release ]; then dist="${{ runner.temp }}/lwip-ce/build"; else dist="${{ github.workspace }}/.ci/lwip-ce/build"; fi
+        if [ "${{ steps.ref.outputs.mode }}" = release ]; then dist="${{ runner.temp }}/lwip-ce/lwip"; else dist="${{ github.workspace }}/.ci/lwip-ce/build"; fi
         mkdir -p "$CEDEV/lib/libload" "$CEDEV/include"
         cp "$dist/lwip.lib" "$CEDEV/lib/libload/lwip.lib"
         cp -R "$dist/lwip" "$CEDEV/include/"
