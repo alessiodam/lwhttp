@@ -12,6 +12,11 @@ set -euo pipefail
 if [[ -z ${LWHTTP_NETNS:-} ]]; then
 	LWHTTP_NETNS=1 unshare --user --map-root-user --net "$0" "$@" &
 	ns=$!
+	# slirp4netns must join the new namespace, not ours before unshare runs.
+	for _ in $(seq 50); do
+		[[ $(readlink "/proc/$ns/ns/net") != "$(readlink /proc/self/ns/net)" ]] && break
+		sleep 0.1
+	done
 	slirp4netns --configure --disable-host-loopback "$ns" tap0 >/dev/null 2>&1 &
 	slirp=$!
 	status=0
