@@ -32,7 +32,7 @@ EXAMPLES := $(wildcard examples/*/makefile)
 CI_FILES := tests/device/ci
 
 .PHONY: all build test docs docs-check coverage fuzz $(FUZZERS:%=fuzz-%) lint format exports abi-check size-check install examples httptest \
-	emulator-test package clean version
+	emulator-test emulator-test-local package clean version
 
 all: build
 
@@ -123,6 +123,10 @@ emulator-test: httptest
 		$(if $(USB_STEP),--usb '$(USB_STEP)') --out tests/device/autotest.json
 	cd tests/device && AUTOTESTER_ROM="$(AUTOTESTER_ROM)" $(CEMU_AUTOTESTER) "$$PWD/autotest.json"; status=$$?; \
 		$(PYTHON) -I httplog.py HTTPLOG.8xv || status=1; exit $$status
+
+# emulator-test on this machine, in a rootless network namespace like CI's.
+emulator-test-local:
+	tests/device/netns.sh $(MAKE) emulator-test USB_STEP='usb|eth,cemu0,dhcp=192.168.84.2/24,gw=192.168.84.1,dns=1.1.1.1'
 
 package: build
 	$(CE_LIBIFY) package --release $(VERSION)
